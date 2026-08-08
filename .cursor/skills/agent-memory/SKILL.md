@@ -3,45 +3,43 @@ name: agent-memory
 description: >-
   Persists and retrieves multi-agent decisions for the manager. Use when the
   manager records a user decision, resumes a worker after needs-decision, plans
-  a multi-step task, logs MCP usage, or needs prior choices (Mode, copy,
-  breakpoints, schema, Writable paths). Manager reads before dispatch;
-  documenter appends when briefed (manager is readonly and must not edit the log).
+  a multi-step task, or needs prior choices (Mode, copy, schema, Writable paths).
+  MCP telemetry goes to mcp-usage.md, not this log. Manager reads before dispatch;
+  documenter appends when briefed.
 ---
 
 # Agent memory (decisions log)
 
-Store durable decisions so the manager and resumed workers do not re-ask or contradict prior answers.
+Store durable **product/design** decisions so the manager and resumed workers do not re-ask or contradict prior answers.
 
-## Canonical location
+## Canonical locations
 
-- Log file: `.agents/memory/decisions.md`
-- Create the directory/file if missing using the template below.
+| Log | Path | Contents |
+|-----|------|----------|
+| Decisions | `.agents/memory/decisions.md` | Settled product/design choices |
+| MCP usage | `.agents/memory/mcp-usage.md` | Server/tool/outcome telemetry only |
 
 ## Roles
 
 | Role | Responsibility |
 |------|----------------|
-| **manager** (readonly) | **Read** before plan/dispatch/resume. Filter by **Applies to** / titles; paste **anchors/titles** into briefs — not the whole log. Never edit. After settled decisions, flagged defaults, or meaningful MCP usage, dispatch `documenter` with the memory-append brief. |
-| **documenter** | **Append** one entry when briefed (`Mode: document`, `Writable paths` = the decisions log only). Confirm in `Changed`. |
-| Other workers | Do not write the log unless the brief explicitly delegates it. Report `MCP used:` so the manager can append. |
+| **manager** (readonly) | Read decisions before plan/dispatch/resume. Never edit. Dispatch `documenter` for decision appends and batched MCP usage appends. |
+| **documenter** | Append when briefed (`Mode: document`, Writable paths limited to the target log). |
+| Other workers | Do not write logs unless briefed. Report `mcpUsed` in JSON so manager can batch. |
 
 ## When to read (manager)
 
-1. At the start of a managed task (before first dispatch).
-2. Before resuming a worker after `needs-decision` / `blocked`.
+1. Start of a managed task (before first dispatch).
+2. Before resume after `needs-decision` / `blocked`.
 3. When the user says “as we decided” / “same as before”.
 
-Search/filter by **Applies to** (paths, agents, Modes, or `mcp`). Paste matching entry titles/anchors into `Related agent-memory`.
+Filter by **Applies to** / titles. Paste anchors into `Related agent-memory`.
 
-## When to write (documenter, via manager brief)
+## When to write decisions
 
-Append **one entry** when a decision is settled (user answered, or reversible default was applied and flagged), or when logging MCP usage.
+Append **one entry** when a decision is settled (user answered, or reversible default flagged). Prefer `Supersedes` over editing.
 
-If two decisions land in the same session, append two entries. Prefer `Supersedes` when contradicting an older entry rather than editing it.
-
-Batch identical MCP reads in one session into one entry (“fetched standards via notion”) when useful; distinct servers/tools get distinct entries or one entry listing them.
-
-## Entry format (decisions)
+### Entry format (decisions)
 
 ```markdown
 ## YYYY-MM-DDTHH:mm:ssZ — <short title>
@@ -56,38 +54,21 @@ Batch identical MCP reads in one session into one entry (“fetched standards vi
 - **Supersedes**: <prior entry title/anchor, or none>
 ```
 
-## Entry format (MCP calls)
+## When to write MCP usage
 
-Log **intent + outcome** only — never payloads, tokens, secrets, or document bodies.
+Batch at manager close (or after prewarm). **Not** into `decisions.md`.
 
 ```markdown
 ## YYYY-MM-DDTHH:mm:ssZ — mcp:<server>/<tool>
 
 - **Task**: <one-line goal>
-- **Status**: decided | defaulted | superseded
-- **Decision**: MCP call <server>/<tool> — ok | auth-failed | error
-- **Options considered**: n/a
-- **Why**: <ref fetched or reason blocked; no secrets/PII/response bodies>
-- **Applies to**: mcp | <paths>
+- **Outcome**: ok | auth-failed | error
+- **Why**: <ref fetched or reason blocked; no secrets/PII/bodies>
 - **Worker IDs**: <id or none>
-- **Supersedes**: none
-```
-
-Title may list multiple tools when batched: `mcp:<server> — standards fetch`.
-
-## File template (create if missing)
-
-```markdown
-# Agent decisions log
-
-Append-only. Manager reads before dispatch; documenter appends when briefed.
-<!-- Index: skim titles / Applies to; paste anchors into briefs — do not paste the whole log -->
-
 ```
 
 ## Rules
 
 - Never store secrets, tokens, `.env` values, or PII.
-- Prefer short, actionable decisions over narrative.
-- If a new decision contradicts an old one, append with `Status: decided` and set `Supersedes` — do not delete the old entry.
-- **Default writer is `documenter` under a manager brief** — not the readonly manager.
+- Append-only. Do not rewrite history except via `Supersedes`.
+- Manager never edits either log.

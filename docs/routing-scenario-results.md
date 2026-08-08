@@ -1,27 +1,27 @@
 # Routing scenario results
 
-Dry-run against kit docs after roster change (2026-08-08). Pass = routed owners ⊆ expect set.
+**Manual dry-run log** (not CI evidence). Re-run by hand when routing tables change. Pass = routed owners ⊆ expect set and primary model matches frontmatter.
 
-| id | expected | actual | pass/fail | notes |
-|----|----------|--------|-----------|-------|
-| 1 | manager, planner | manager → planner | pass | multi-domain |
-| 2 | planner | planner | pass | plan-only |
-| 3 | frontend | frontend | pass | UI restyle; not risk |
-| 4 | backend | backend | pass | API no PII; not risk |
-| 5 | frontend | frontend (+ a11y-wcag) | pass | WCAG fix; harness would be tester |
-| 6 | tester | tester | pass | harness-only |
-| 7 | reviewer | reviewer (+ code-review) | pass | no edits |
-| 8 | documenter | documenter | pass | memory/handoff |
-| 9 | security | security | pass | not risk |
-| 10 | planner, documenter | planner (+ architecture-review); ADR → documenter | pass | not implementers |
-| 11 | frontend | frontend (+ perf-audit) | pass | UI perf |
-| 12 | backend | backend (+ perf-audit) | pass | query perf |
-| 13 | devops | devops | pass | CI |
-| 14 | infrastructure | infrastructure | pass | IaC; human-approve for prod apply |
-| 15 | risk | risk | pass | PII; not security alone |
-| 16 | no-owner | no-owner / blocked | pass | console-only |
-| 17 | planner, backend, frontend, risk, tester, reviewer | planner order: backend + frontend + risk → tester → reviewer | pass | security only if auth (not required here) |
-| 18 | risk | risk | pass | not security |
-| 19 | devops | devops | pass | not infrastructure |
+| id | expected | model | actual | pass/fail | notes |
+|----|----------|-------|--------|-----------|-------|
+| 1 | manager, planner | inherit | manager → planner | pass | multi-domain |
+| 2 | planner | inherit | planner | pass | plan-only |
+| 3 | frontend | inherit | frontend | pass | UI restyle; not risk |
+| 4 | backend | inherit | backend | pass | API no PII; not risk |
+| 5 | frontend | inherit | frontend (+ a11y-wcag) | pass | WCAG fix; harness would be tester |
+| 6 | tester | inherit | tester | pass | harness-only |
+| 7 | reviewer | inherit | reviewer (+ code-review) | pass | no edits |
+| 8 | documenter | inherit | documenter | pass | memory/handoff |
+| 9 | security | inherit | security | pass | not risk |
+| 10 | planner, documenter | inherit | planner (+ architecture-review); ADR → documenter | pass | not implementers |
+| 11 | frontend | inherit | frontend (+ perf-audit) | pass | UI perf |
+| 12 | backend | inherit | backend (+ perf-audit) | pass | query perf |
+| 13 | devops | inherit | devops | pass | CI |
+| 14 | infrastructure | inherit | infrastructure | pass | IaC; human-approve for prod apply |
+| 15 | risk | inherit | risk | pass | PII; not security alone |
+| 16 | no-owner | n/a | no-owner / blocked | pass | console-only |
+| 17 | planner, backend, frontend, risk, tester, reviewer | inherit | planner order: backend + frontend + risk → tester → reviewer | pass | security only if auth (not required here) |
+| 18 | risk | inherit | risk | pass | not security |
+| 19 | devops | inherit | devops | pass | not infrastructure |
 
-**Summary:** 19/19 pass on dry-run against current manager/planner/AGENTS routing.
+**Summary:** 19/19 pass on dry-run against current manager/planner/AGENTS routing (default inherit models).

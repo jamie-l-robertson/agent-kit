@@ -4,7 +4,7 @@ description: >-
   MCP-only intake for GitHub Issues and Jira (parent + child tickets). Use when
   the planner (or manager) must ingest issue-backed work. Never use gh, curl,
   REST, WebFetch, or browser as fallback. Prefer manager MCP prewarm; report
-  MCP used for agent-memory logging.
+  mcpUsed for manager mcp-usage batching.
 ---
 
 # Issue intake (MCP only)
@@ -34,7 +34,7 @@ Ingest GitHub / Jira sources into planning. **No CLI or HTTP fallbacks.**
      - No relationship capability and parent lists none → `Child tickets: unknown — relationship lookup unsupported` (note under Notes; `blocked` only if brief requires completeness)
      - Known child ref unreadable via MCP → `blocked` for that ref
 5. **Cite** — Record `{type, ref, summary, children}` and acceptance points used.
-6. **MCP used** — Report `MCP used: <server>/<tool> — ok|auth-failed|error` so the manager can memory-append (no payloads/secrets).
+6. **mcpUsed** — List meaningful calls under JSON `mcpUsed` (e.g. `<server>/<tool> — ok|auth-failed|error`) so the manager can batch to mcp-usage (no payloads/secrets).
 
 ## Priority vs pasted brief
 

@@ -8,7 +8,7 @@ import {
   composedAgentSource,
   parseFrontmatter,
 } from './sync-tool-adapters.mjs'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -56,4 +56,18 @@ test('composedAgentSource keeps frontmatter and expands body', () => {
   assert.match(composed, /^---\n/)
   assert.match(composed, /Shared worker protocol/)
   assert.doesNotMatch(composed, /<!--\s*protocol:/)
+})
+
+test('every agent has model frontmatter; Cursor compose keeps it', () => {
+  const dir = join(root, '.agents', 'agents')
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.md'))) {
+    const raw = readFileSync(join(dir, f), 'utf8')
+    const { frontmatter } = parseFrontmatter(raw)
+    assert.ok(
+      typeof frontmatter.model === 'string' && frontmatter.model.length > 0,
+      `${f} missing model:`,
+    )
+    const composed = composedAgentSource(raw)
+    assert.match(composed, /^model: /m, `${f} compose dropped model`)
+  }
 })

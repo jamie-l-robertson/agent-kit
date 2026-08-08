@@ -25,7 +25,7 @@ Quick reference for subagents. Prefer this over rediscovering the stack each run
 - **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
 - **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
 - **Rules**: always-on under `.agents/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
-- **Skills**: `.agents/skills/setup`, `agent-memory`, `brief-hygiene`, `verify-evidence`, `issue-intake`, `a11y-wcag`, `perf-audit`, `architecture-review`, `code-review` (each has `SKILL.md`). Agent bodies compose `.agents/protocols/` at sync.
+- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `code-review`, `issue-intake`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — none. Inventory: `.agents/memory/skills-inventory.md`. Agent bodies compose `.agents/protocols/` at sync.
 
 ### Resolving Design system / standards refs
 
@@ -69,7 +69,7 @@ Detect the package manager from the lockfile. Prefer commands listed here over i
 | Codegen / types | <!-- e.g. pnpm generate:types — or n/a --> |
 | Full suite | <!-- e.g. pnpm test — only when explicitly asked --> |
 
-For Playwright e2e/a11y (when used): attempt the run first (`webServer` can start the dev server; allow ~180s cold start). Reserve blocked for failed boot, auth, or missing required env secrets listed below.
+For Playwright e2e/a11y (when used): attempt first; cold-start / blocked rules → **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`). Missing required env secrets listed below → blocked.
 
 ### Required env (for boots / e2e)
 
@@ -92,21 +92,22 @@ Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — d
 | `tester` | Tests, coverage, harness (no production fixes) |
 | `reviewer` | Diff/code review (`audit-only`) via code-review skill; does not implement |
 | `documenter` | Docs + agent-memory appends when briefed |
-| `security` | Threats, auth, secrets-in-code, CVE hygiene |
+| `security` | Threats, auth, secrets-in-code, CVE hygiene (`audit-only`; manager routes fixes) |
 | `devops` | CI workflows, in-repo deploy/Docker, pipeline env wiring |
 | `infrastructure` | DNS-as-code, Terraform/Pulumi/CDK, cloud secret stores/automation |
-| `risk` | PII, retention, data classification / compliance |
+| `risk` | PII, retention, data classification / compliance (`audit-only`; manager routes fixes) |
 
-`manager` · `planner` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — canonical: `.agents/agents/` (synced to `.cursor/agents/`, `.claude/agents/`, `.github/agents/`).
+`manager` · `planner` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — canonical: `.agents/agents/` (synced to `.cursor/agents/`, `.claude/agents/`, `.github/agents/`). Optional per-agent `model:` in those files (kit default `inherit`); sync after edits. **Destructive** work requires brief `Human approve: granted`.
 
 Call-graph gate: `.agents/hooks/` — hard deny of worker nesting on **Cursor** and **Claude Code**; **Copilot** is prompt policy only.
 
-Routing regression drills: [`docs/routing-scenarios.md`](docs/routing-scenarios.md) (JSON twin for CI).
+Routing regression drills: [`docs/routing-scenarios.md`](docs/routing-scenarios.md) (JSON twin for fixture CI).
 
 ## Memory
 
-- Log: `.agents/memory/decisions.md`
+- Decisions: `.agents/memory/decisions.md` (product/design choices)
+- MCP usage: `.agents/memory/mcp-usage.md` (server/tool/outcome only — not decisions)
+- Skills inventory: `.agents/memory/skills-inventory.md` (from `node scripts/sync-project-skills.mjs`)
 - Install keep-audit: `.agents/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
 - Skill: `.agents/skills/agent-memory/SKILL.md`
-- **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the log
-- MCP calls that matter are logged via manager → documenter (server/tool/outcome only — no secrets or payloads)
+- **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the target log

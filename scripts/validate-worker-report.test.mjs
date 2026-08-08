@@ -1,6 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { extractWorkerReportJson, validateWorkerReport } from './validate-worker-report.mjs'
+import {
+  extractWorkerReportJson,
+  validateWorkerReport,
+  SCHEMA_REQUIRED,
+  loadSchemaRequired,
+} from './validate-worker-report.mjs'
 
 const valid = {
   status: 'done',
@@ -12,9 +17,12 @@ const valid = {
   humanApprove: 'n/a',
 }
 
+test('schema required keys match validator', () => {
+  assert.deepEqual(loadSchemaRequired().sort(), [...SCHEMA_REQUIRED].sort())
+})
+
 test('validateWorkerReport accepts valid report', () => {
-  const r = validateWorkerReport(valid)
-  assert.equal(r.ok, true)
+  assert.equal(validateWorkerReport(valid).ok, true)
 })
 
 test('validateWorkerReport rejects missing fields', () => {
@@ -24,7 +32,42 @@ test('validateWorkerReport rejects missing fields', () => {
 })
 
 test('validateWorkerReport rejects bad status', () => {
-  const r = validateWorkerReport({ ...valid, status: 'ok' })
+  assert.equal(validateWorkerReport({ ...valid, status: 'ok' }).ok, false)
+})
+
+test('done + humanApprove required is invalid', () => {
+  const r = validateWorkerReport({ ...valid, humanApprove: 'required' })
+  assert.equal(r.ok, false)
+})
+
+test('reviewer audit-only done requires findings', () => {
+  const r = validateWorkerReport({
+    ...valid,
+    agent: 'reviewer',
+    mode: 'audit-only',
+    changed: [],
+    findings: null,
+  })
+  assert.equal(r.ok, false)
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'reviewer',
+      mode: 'audit-only',
+      changed: [],
+      findings: 'none',
+    }).ok,
+    true,
+  )
+})
+
+test('planner done must have empty changed', () => {
+  const r = validateWorkerReport({
+    ...valid,
+    agent: 'planner',
+    mode: 'audit-only',
+    changed: ['x'],
+  })
   assert.equal(r.ok, false)
 })
 
@@ -32,7 +75,7 @@ test('extractWorkerReportJson finds last matching fence', () => {
   const text = `
 Status: done
 \`\`\`json
-{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none"}
+{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none","humanApprove":"n/a","findings":"none"}
 \`\`\`
 `
   const report = extractWorkerReportJson(text)

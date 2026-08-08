@@ -1,6 +1,8 @@
-## Worker-report JSON (required)
+## Worker-report JSON (canonical)
 
-After the human-readable Output block, end your final message with a fenced JSON object matching `.agents/schemas/worker-report.schema.json`:
+The fenced JSON object is the **authoritative** report. Manager bounce rules and tooling validate it. Prose above the fence is a short human summary (≤10 lines) and **must not contradict** the JSON.
+
+End your final message with a fenced object matching `.agents/schemas/worker-report.schema.json`:
 
 ```json
 {
@@ -8,7 +10,7 @@ After the human-readable Output block, end your final message with a fenced JSON
   "agent": "<your agent name>",
   "mode": "audit-only",
   "goal": "<one sentence>",
-  "changed": ["<paths>"] ,
+  "changed": [],
   "recommendNext": "none",
   "findings": null,
   "evidence": null,
@@ -22,7 +24,13 @@ After the human-readable Output block, end your final message with a fenced JSON
 }
 ```
 
+Rules:
+
 - `status`: `done` | `needs-decision` | `blocked` | `out-of-scope`
-- `changed`: string array of paths, or empty array when none
+- `changed`: string paths, or `[]` when none
 - `humanApprove`: `required` | `granted` | `n/a`
-- Manager bounces `done` without a parseable valid fence.
+- `status: done` with `humanApprove: required` is invalid (use `needs-decision`)
+- Audit agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` → non-null `findings` string (use `"none"` if empty)
+- Planner on `done` → `changed` must be `[]`
+- When Success required verification commands → non-empty `evidence` on `done` / `blocked` after a real run
+- Manager bounces missing/invalid fences and schema violations

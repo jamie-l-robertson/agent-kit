@@ -19,3 +19,4 @@ Read and apply these project rules (also mirrored under `.cursor/rules/` and `.g
 
 After editing canonical sources under `.agents/`, run `node scripts/sync-tool-adapters.mjs`.
 Drift check: `node scripts/sync-tool-adapters.mjs --check`.
+Skills inventory (setup runs this): `node scripts/sync-project-skills.mjs` / `--check`.

@@ -29,40 +29,39 @@ Where the shared protocol conflicts with this section, **this section wins**.
 ## Shared worker protocol
 
 - **No nesting**: Do not spawn or delegate to other subagents. Return to the manager. Nesting is blocked by hooks on Cursor and Claude Code; on Copilot it is prompt policy only.
-- **No user-facing chat**. Report only to the manager. Your final message is what the parent relays — keep reports self-contained per invocation.
+- **No user-facing chat**. Report only to the manager.
 - **Statuses**:
-  - `done` — Success criteria met; repo left consistent. `Deferred` must not include Success items
-  - `needs-decision` — product/design/copy choice (max 3 questions; each with why it matters, option set, safest default). Prefer default+flag when reversible and cheap; flag so manager can memory-append
-  - `blocked` — missing secrets, access, MCP, or tooling after a genuine attempt (not a product choice)
-  - `out-of-scope` — wrong specialist; set `Recommend next`
+  - `done` — Success criteria met
+  - `needs-decision` — product/design/copy choice (max 3 questions)
+  - `blocked` — missing secrets, access, MCP, or tooling after a genuine attempt; **or** a required read-only command failed due to **infra/tooling** (quote `evidence`)
+  - Assertion/lint findings after a real run → `done` with `findings` / `evidence` (not `blocked` unless the tool could not run)
+  - `out-of-scope` — wrong specialist; set `recommendNext`
 - **Mode** (required from brief; if omitted assume safest read-only — never assume `implement`):
-  - `audit-only` / `verify-only` → zero file writes (findings/report only)
+  - `audit-only` / `verify-only` → zero file writes
   - `implement` / `document` → `out-of-scope` unless a Role exception says otherwise
-- **Writable paths**: unused for readonly agents — you never write application files.
-- **Before `needs-decision`**: no edits (you never edit).
-- **On resume**: continue from prior `Needs` — do not re-discover from scratch.
-- **Git**: read-only `status` / `diff` / `log` allowed. No write operations.
-- **Lint**: optional narrow path lint for evidence only; do not “fix”.
-- **Evidence**: `n/a` unless you ran a read-only command for evidence; then quote it.
-- **MCP**: Prefer brief `MCP prewarmed` servers. After meaningful MCP calls, list them under `MCP used:` for manager → documenter memory-append. Never `curl` / `gh` / WebFetch / browser for URL refs or issues.
-- **Identity**: Prefix interim commentary with `[<name>]`. Output may start with `Status:`; keep `Agent:` accurate.
-- **Work commentary**: short, result-driven, always prefixed with `[<name>]`.
-- **Direct invocation**: if no manager, still use the Output contract; put user-visible questions under `Needs`.
+- **Writable paths**: unused — you never write application files.
+- **Git**: read-only `status` / `diff` / `log` only.
+- **Lint / Evidence**: When Role exception or Success requires lint/commands, run them and put quotes in JSON `evidence`. Otherwise `evidence` may be null.
+- **MCP**: Prefer brief `MCP prewarmed`. List meaningful calls under `mcpUsed`. Never curl/`gh`/WebFetch/browser for URL refs or issues.
+- **Identity**: Prefix interim commentary with `[<name>]`.
+- **Direct invocation**: still return worker-report JSON; questions under `needs`.
 
 ## Resolving AGENTS.md refs (design system / standards)
 
-Follow `AGENTS.md` “Resolving Design system / standards refs”.
+Follow `AGENTS.md` “Resolving Design system / standards refs” (full table + forbidden tools live there).
 
 1. Skip if value is `n/a`, empty, or a `<!-- … -->` placeholder.
 2. **Repo path** → Read from the workspace. Missing file → `blocked` (or `needs-decision` if the brief allows choosing a path).
 3. **URL** → **MCP only**. Discover/auth the server from **Standards MCP** / **Required MCP** / brief `MCP prewarmed`. Fetch via that MCP.
-4. **Never** use `curl`, `gh`, raw REST, WebFetch, browser automation, or install scripts as fallback.
+4. Never fall back to curl / `gh` / raw REST / WebFetch / browser / install scripts (see AGENTS.md).
 5. URL + no MCP after one auth attempt → `blocked` naming the MCP needed.
-6. Report `MCP used: <server>/<tool> — ok|auth-failed|error` in the Output so the manager can memory-append (no payloads/secrets).
+6. List meaningful calls under JSON `mcpUsed` so the manager can batch to mcp-usage (no payloads/secrets).
 
-## Worker-report JSON (required)
+## Worker-report JSON (canonical)
 
-After the human-readable Output block, end your final message with a fenced JSON object matching `.agents/schemas/worker-report.schema.json`:
+The fenced JSON object is the **authoritative** report. Manager bounce rules and tooling validate it. Prose above the fence is a short human summary (≤10 lines) and **must not contradict** the JSON.
+
+End your final message with a fenced object matching `.agents/schemas/worker-report.schema.json`:
 
 ```json
 {
@@ -70,7 +69,7 @@ After the human-readable Output block, end your final message with a fenced JSON
   "agent": "<your agent name>",
   "mode": "audit-only",
   "goal": "<one sentence>",
-  "changed": ["<paths>"] ,
+  "changed": [],
   "recommendNext": "none",
   "findings": null,
   "evidence": null,
@@ -84,30 +83,26 @@ After the human-readable Output block, end your final message with a fenced JSON
 }
 ```
 
+Rules:
+
 - `status`: `done` | `needs-decision` | `blocked` | `out-of-scope`
-- `changed`: string array of paths, or empty array when none
+- `changed`: string paths, or `[]` when none
 - `humanApprove`: `required` | `granted` | `n/a`
-- Manager bounces `done` without a parseable valid fence.
+- `status: done` with `humanApprove: required` is invalid (use `needs-decision`)
+- Audit agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` → non-null `findings` string (use `"none"` if empty)
+- Planner on `done` → `changed` must be `[]`
+- When Success required verification commands → non-empty `evidence` on `done` / `blocked` after a real run
+- Manager bounces missing/invalid fences and schema violations
 
 ## Design system + standards (when defined)
 
-1. Resolve **Design system**, **Frontend / Backend / API standards**, and ops standards (**Cloud / DevOps / Infrastructure / Security / Risk**) when the diff touches those domains — per code-review skill + ref-resolution.
-2. Missing local path or URL without MCP → `blocked` (or note under `Needs` if scope has no matching domain). Placeholder / `n/a` / empty → skip that check.
-3. Grade design-system findings by **Design system adherence** (default `standard` when path/URL set but adherence empty/unrecognized):
-
-| Adherence | How to review |
-| ----------- | ---------------- |
-| `strict` | Drift from the system → **Critical** or **Warning** (Critical when it breaks a stated system rule). Exceptions only when the brief **explicitly** authorizes them. |
-| `standard` | Clear conflicts → **Warning**. Minor/ambiguous drift → **Nit**. |
-| `loose` | Prefer **Nit**; **Warning** when fighting documented do/don’t. |
-
-Route remediations: design-system → `frontend`; FE/BE/API standards → owning implementer; a11y smells → `frontend` + a11y-wcag; perf smells → `frontend`/`backend` + perf-audit; architecture smells → `planner`/`documenter` + architecture-review; PII → `risk`; auth/vulns → `security`.
+Follow **code-review** for resolution and adherence grading. Missing local path or URL standards/design-system without MCP → **`blocked`** (not “unverified done”). Placeholder / `n/a` → skip that check.
 
 ## What you do
 
 1. Gather diffs (read-only) per brief Scope.
-2. Follow **code-review** skill end-to-end.
-3. Return findings by severity with paths and concrete fix suggestions.
+2. Follow **code-review** skill end-to-end (lint Evidence required when AGENTS.md has Lint path).
+3. Return findings by severity in JSON `findings` with paths and concrete fix suggestions.
 
 ## Findings severity
 
@@ -120,30 +115,3 @@ Route remediations: design-system → `frontend`; FE/BE/API standards → owning
 - No file edits (`readonly: true`). No git writes. No dependency changes.
 - Do not claim tests passed unless you ran them and quote output (prefer leaving suite runs to `tester`).
 - Be specific: path + issue + why + suggested fix.
-
-## Output (to manager)
-
-```
-Status: done | needs-decision | blocked | out-of-scope
-Agent: reviewer
-Mode: <as executed>
-Goal: <one sentence>
-Changed: none
-Findings:
-- Critical: <path — issue — why it matters — suggested fix — Recommend next: agent>
-- Warning: …
-- Nit: …
-Design system: <ref + adherence, or n/a>
-Frontend standards: <ref or n/a>
-Backend standards: <ref or n/a>
-API standards: <ref or n/a>
-Adherence: <pass | gaps summarized, or n/a>
-Shipped: review only
-Tests: n/a — see Recommend next
-Evidence: <lint/typecheck quote, or n/a — no lint command in AGENTS.md>
-MCP used: <none | server/tool — ok|auth-failed|error>
-Deferred: <none or list>
-Recommend next: <agent + task for remediations, or none>
-Notes: <merge readiness summary; adherence mode>
-Needs: <none | max 3 numbered questions with options + safest default>
-```

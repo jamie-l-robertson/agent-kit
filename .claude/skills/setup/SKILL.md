@@ -38,8 +38,10 @@ Setup progress:
 - [ ] 4. Path ownership
 - [ ] 5. Narrow commands
 - [ ] 6. Required env + no-owner
-- [ ] 7. Write AGENTS.md
-- [ ] 8. Post-setup checks
+- [ ] 7. Optional agent model overrides
+- [ ] 8. Write AGENTS.md
+- [ ] 9. Sync project skills inventory (required)
+- [ ] 10. Post-setup checks
 ```
 
 ### 0. Existing AGENTS.md / CLAUDE.md (project-owned)
@@ -101,6 +103,7 @@ Ask only for fields still missing after inference. Suggested order:
    Prefer real scripts from `package.json`. Use `n/a` when unused.
 17. **Required env** — names needed for boots/e2e, or `none`
 18. **No owner** — keep kit defaults unless the user adds project-specific zones
+19. **Agent models (optional)** — kit default is `inherit` on every `.agents/agents/<name>.md`. Ask if the project wants any per-agent pins (picker-available slugs only). Skip keeps all `inherit`. If pinning: edit those agents’ `model:` frontmatter, then `node scripts/sync-tool-adapters.mjs`.
 
 Keep the fixed sections (**Rules**, **Agents & routing**, **Memory**, call-graph note, ref-resolution table) unless the user asks to change agents.
 
@@ -116,20 +119,34 @@ Update `AGENTS.md` in place:
 
 Show a short diff summary of what changed; offer one follow-up edit pass if something looks wrong.
 
-### 5. Post-setup checks (brief)
+### 5. Sync project skills inventory (required)
 
-After writing, verify and report (fix only if broken; do not expand scope):
+**Do not skip.** After writing `AGENTS.md`, always run:
+
+```bash
+node scripts/sync-project-skills.mjs
+```
+
+Follow **sync-project-skills** (`.agents/skills/sync-project-skills/SKILL.md`). On success, report kit vs project skill counts in the setup summary. On failure → fix and re-run; do not mark setup Done.
+
+This updates the **Skills** line and writes `.agents/memory/skills-inventory.md` (non-destructive; never deletes skill dirs).
+
+### 6. Post-setup checks (brief)
+
+After skills sync, verify and report (fix only if broken; do not expand scope):
 
 1. `.gitignore` ignores `.agents/hooks/state/` (and legacy `.cursor/hooks/state/` if present).
 2. Canonical agents exist under `.agents/agents/`; adapter copies exist under `.cursor/agents/`, `.claude/agents/`, `.github/agents/`.
 3. Worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` basenames (excluding `manager`). Roster: `planner`, `frontend`, `backend`, `tester`, `documenter`, `reviewer`, `security`, `devops`, `infrastructure`, `risk` — trim unused via `WORKERS` + agent files (see README Authoring + specialist-cap in `docs/routing-scenarios.md`).
 4. Cursor hooks point at `.agents/hooks/adapters/cursor.mjs`; Claude `.claude/settings.json` hooks point at `.agents/hooks/adapters/claude.mjs`.
-5. If you edited `.agents/` sources, remind the user to run `node scripts/sync-tool-adapters.mjs` before commit.
-6. Remind: Context7 MCP needed if the Context7 rule stays enabled; other **Required MCP** servers must be installable for prewarm.
+5. `.agents/memory/skills-inventory.md` exists; `AGENTS.md` **Skills** lists kit + project (or project — none).
+6. If you edited `.agents/` sources, remind the user to run `node scripts/sync-tool-adapters.mjs` before commit.
+7. Remind: Context7 MCP needed if the Context7 rule stays enabled; other **Required MCP** servers must be installable for prewarm.
 
 ## Done criteria
 
 - No `CUSTOMIZE` / `<!-- e.g.` placeholders remain in required Stack, ownership, commands, or Required env sections (optional rows may be `n/a`).
 - Package manager and commands match the lockfile / `package.json` unless the user overrode them.
 - Standards/design-system URLs (if any) have a Standards MCP hint or explicit `unknown` / risk acknowledged.
-- User got a concise “ready to use” confirmation with any remaining optional gaps called out.
+- `node scripts/sync-project-skills.mjs` succeeded; inventory file exists; **Skills** line is current.
+- User got a concise “ready to use” confirmation with kit vs project skill counts and any remaining optional gaps called out.

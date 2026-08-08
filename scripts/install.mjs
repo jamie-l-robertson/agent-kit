@@ -36,7 +36,12 @@ const KIT_ROOT_WHEN_LOCAL = resolve(__dirname, '..')
 const DEFAULT_REPO = 'jamie-l-robertson/agent-kit'
 const DEFAULT_REF = 'main'
 
-const TARGET = process.cwd()
+const MEMORY_PRESERVE = [
+  'install-audit.md',
+  'decisions.md',
+  'mcp-usage.md',
+  'skills-inventory.md',
+]
 
 function parseArgs(argv) {
   let from = null
@@ -65,8 +70,12 @@ Env:
 `)
 }
 
-function ensureInstallAuditHeader() {
-  const dest = join(TARGET, '.agents', 'memory', 'install-audit.md')
+function ensureDir(p) {
+  mkdirSync(p, { recursive: true })
+}
+
+function ensureInstallAuditHeader(target) {
+  const dest = join(target, '.agents', 'memory', 'install-audit.md')
   ensureDir(dirname(dest))
   if (!existsSync(dest)) {
     writeFileSync(
@@ -83,8 +92,8 @@ Use for support, bug tracking, and knowing which stack-card files are project-lo
   return dest
 }
 
-function appendInstallKeep({ path, kit, force }) {
-  const dest = ensureInstallAuditHeader()
+function appendInstallKeep(target, { path, kit, force }) {
+  const dest = ensureInstallAuditHeader(target)
   const ts = new Date().toISOString()
   const entry = `
 ## ${ts} — kept project file
@@ -99,18 +108,14 @@ function appendInstallKeep({ path, kit, force }) {
   writeFileSync(dest, readFileSync(dest, 'utf8').replace(/\s*$/, '') + entry + '\n', 'utf8')
 }
 
-function ensureDir(p) {
-  mkdirSync(p, { recursive: true })
-}
-
-function mergeGitignore(kitGitignorePath) {
+function mergeGitignore(target, kitGitignorePath) {
   if (!existsSync(kitGitignorePath)) return
   const kitLines = readFileSync(kitGitignorePath, 'utf8')
     .split('\n')
     .map((l) => l.trimEnd())
     .filter((l) => l && !l.startsWith('#'))
 
-  const dest = join(TARGET, '.gitignore')
+  const dest = join(target, '.gitignore')
   const existing = existsSync(dest) ? readFileSync(dest, 'utf8') : ''
   const have = new Set(
     existing
@@ -131,53 +136,81 @@ function copyDir(src, dest) {
   cpSync(src, dest, { recursive: true, force: true })
 }
 
-function installFrom(kitRoot, { force, kitLabel }) {
-  const required = ['.agents', '.cursor', '.claude', 'scripts/sync-tool-adapters.mjs']
+function snapshotMemoryFiles(target) {
+  /** @type {Map<string, string>} */
+  const out = new Map()
+  const mem = join(target, '.agents', 'memory')
+  for (const name of MEMORY_PRESERVE) {
+    const p = join(mem, name)
+    if (existsSync(p)) out.set(name, readFileSync(p, 'utf8'))
+  }
+  return out
+}
+
+function restoreMemoryFiles(target, snap) {
+  const mem = join(target, '.agents', 'memory')
+  ensureDir(mem)
+  for (const [name, content] of snap) {
+    writeFileSync(join(mem, name), content, 'utf8')
+  }
+}
+
+function copyKitScripts(kitRoot, target) {
+  const srcDir = join(kitRoot, 'scripts')
+  const destDir = join(target, 'scripts')
+  ensureDir(destDir)
+  if (!existsSync(srcDir)) return
+  for (const name of readdirSync(srcDir)) {
+    if (!name.endsWith('.mjs') && !name.endsWith('.sh')) continue
+    cpSync(join(srcDir, name), join(destDir, name))
+  }
+}
+
+/**
+ * @param {string} kitRoot
+ * @param {{ force?: boolean, kitLabel?: string, target?: string }} opts
+ */
+export function installFrom(kitRoot, { force = false, kitLabel, target = process.cwd() } = {}) {
+  const required = [
+    '.agents',
+    '.cursor',
+    '.claude',
+    'scripts/sync-tool-adapters.mjs',
+    'scripts/sync-project-skills.mjs',
+  ]
   for (const rel of required) {
     if (!existsSync(join(kitRoot, rel))) {
       throw new Error(`Kit incomplete: missing ${rel} under ${kitRoot}`)
     }
   }
 
-  const auditPath = join(TARGET, '.agents', 'memory', 'install-audit.md')
-  const priorAudit = existsSync(auditPath) ? readFileSync(auditPath, 'utf8') : null
+  const priorMemory = snapshotMemoryFiles(target)
 
-  copyDir(join(kitRoot, '.agents'), join(TARGET, '.agents'))
-  copyDir(join(kitRoot, '.cursor'), join(TARGET, '.cursor'))
-  copyDir(join(kitRoot, '.claude'), join(TARGET, '.claude'))
+  copyDir(join(kitRoot, '.agents'), join(target, '.agents'))
+  copyDir(join(kitRoot, '.cursor'), join(target, '.cursor'))
+  copyDir(join(kitRoot, '.claude'), join(target, '.claude'))
 
-  // Preserve project install-audit across .agents overwrite
-  if (priorAudit) {
-    ensureDir(dirname(auditPath))
-    writeFileSync(auditPath, priorAudit, 'utf8')
-  }
+  restoreMemoryFiles(target, priorMemory)
 
-  mkdirSync(join(TARGET, '.github'), { recursive: true })
+  mkdirSync(join(target, '.github'), { recursive: true })
   for (const sub of ['agents', 'skills', 'instructions']) {
     const src = join(kitRoot, '.github', sub)
-    if (existsSync(src)) copyDir(src, join(TARGET, '.github', sub))
+    if (existsSync(src)) copyDir(src, join(target, '.github', sub))
   }
 
-  mkdirSync(join(TARGET, 'scripts'), { recursive: true })
-  cpSync(
-    join(kitRoot, 'scripts', 'sync-tool-adapters.mjs'),
-    join(TARGET, 'scripts', 'sync-tool-adapters.mjs'),
-  )
-  // Keep install script available for re-runs / docs
-  if (existsSync(join(kitRoot, 'scripts', 'install.mjs'))) {
-    cpSync(join(kitRoot, 'scripts', 'install.mjs'), join(TARGET, 'scripts', 'install.mjs'))
-  }
-  if (existsSync(join(kitRoot, 'scripts', 'install.sh'))) {
-    cpSync(join(kitRoot, 'scripts', 'install.sh'), join(TARGET, 'scripts', 'install.sh'))
+  copyKitScripts(kitRoot, target)
+
+  if (existsSync(join(kitRoot, 'docs'))) {
+    copyDir(join(kitRoot, 'docs'), join(target, 'docs'))
   }
 
   const label = kitLabel || kitRoot
   for (const file of ['AGENTS.md', 'CLAUDE.md']) {
-    const dest = join(TARGET, file)
+    const dest = join(target, file)
     const src = join(kitRoot, file)
     if (!existsSync(src)) continue
     if (existsSync(dest) && !force) {
-      appendInstallKeep({ path: file, kit: label, force: false })
+      appendInstallKeep(target, { path: file, kit: label, force: false })
       console.log(
         `Kept existing ${file} (pass --force or AGENT_KIT_FORCE=1 to replace). Logged to .agents/memory/install-audit.md — run **setup** to merge kit-required sections.`,
       )
@@ -187,7 +220,7 @@ function installFrom(kitRoot, { force, kitLabel }) {
     }
   }
 
-  mergeGitignore(join(kitRoot, '.gitignore'))
+  mergeGitignore(target, join(kitRoot, '.gitignore'))
 }
 
 function downloadGithubKit(repo, ref) {
@@ -219,12 +252,12 @@ function downloadGithubKit(repo, ref) {
 
 function main() {
   const { from, force } = parseArgs(process.argv.slice(2))
+  const TARGET = process.cwd()
   let cleanup = null
   let kitRoot = from
 
   try {
     if (!kitRoot) {
-      // If this file lives inside a full kit checkout, prefer that (local reinstall).
       const localAgents = join(KIT_ROOT_WHEN_LOCAL, '.agents')
       const repo = process.env.AGENT_KIT_REPO || DEFAULT_REPO
       const ref = process.env.AGENT_KIT_REF || DEFAULT_REF
@@ -251,7 +284,7 @@ function main() {
       ? `--from=${kitRoot}`
       : `${process.env.AGENT_KIT_REPO || DEFAULT_REPO}@${process.env.AGENT_KIT_REF || DEFAULT_REF}`
     console.log(`Installing into ${TARGET}`)
-    installFrom(kitRoot, { force, kitLabel })
+    installFrom(kitRoot, { force, kitLabel, target: TARGET })
     console.log(`
 Done.
 
@@ -264,10 +297,16 @@ Next — configure the stack card:
 Optional:
   node scripts/sync-tool-adapters.mjs          # after you edit .agents/
   node scripts/sync-tool-adapters.mjs --check  # detect adapter drift
+  node scripts/sync-project-skills.mjs         # skills inventory (setup runs this)
 `)
   } finally {
     if (cleanup) cleanup()
   }
 }
 
-main()
+const isMain =
+  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+
+if (isMain) {
+  main()
+}

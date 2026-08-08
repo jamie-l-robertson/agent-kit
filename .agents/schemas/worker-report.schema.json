@@ -4,7 +4,15 @@
   "title": "WorkerReport",
   "type": "object",
   "additionalProperties": true,
-  "required": ["status", "agent", "mode", "goal", "changed", "recommendNext"],
+  "required": [
+    "status",
+    "agent",
+    "mode",
+    "goal",
+    "changed",
+    "recommendNext",
+    "humanApprove"
+  ],
   "properties": {
     "status": {
       "type": "string",
@@ -33,5 +41,47 @@
       "type": "string",
       "enum": ["required", "granted", "n/a"]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "humanApprove": { "const": "required" }
+        },
+        "required": ["status", "humanApprove"]
+      },
+      "then": { "not": {} }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "mode": { "const": "audit-only" },
+          "agent": { "enum": ["reviewer", "security", "risk"] }
+        },
+        "required": ["status", "mode", "agent"]
+      },
+      "then": {
+        "required": ["findings"],
+        "properties": {
+          "findings": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "agent": { "const": "planner" }
+        },
+        "required": ["status", "agent"]
+      },
+      "then": {
+        "properties": {
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    }
+  ]
 }

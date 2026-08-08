@@ -20,6 +20,7 @@ import {
 import { dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WORKERS, MANAGER } from '../.agents/hooks/gate-core.mjs'
+import { KNOWN_KIT_SKILL_NAMES } from './kit-skill-names.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -33,19 +34,6 @@ const CURSOR_GATE = 'node .agents/hooks/adapters/cursor.mjs'
 const CLAUDE_GATE = 'node .agents/hooks/adapters/claude.mjs'
 
 const MARKER_RE = /<!--\s*(?:protocol|include):[a-z0-9_-]+\s*-->/i
-
-/** Kit skill names ever shipped — used to remove stale kit skills without touching foreign dirs. */
-const KNOWN_KIT_SKILL_NAMES = new Set([
-  'agent-memory',
-  'setup',
-  'brief-hygiene',
-  'verify-evidence',
-  'issue-intake',
-  'a11y-wcag',
-  'perf-audit',
-  'architecture-review',
-  'code-review',
-])
 
 /** Kit agent basenames ever shipped — stale cleanup without touching foreign agent files. */
 const KNOWN_KIT_AGENT_NAMES = new Set([
@@ -254,9 +242,11 @@ export function validateWorkers() {
   }
 }
 
-function expectedClaudeAgent(name, description, body, readonly) {
+function expectedClaudeAgent(name, description, body, readonly, model) {
   const fm = { name, description }
-  if (readonly) fm.disallowedTools = 'Write, Edit'
+  if (model) fm.model = model
+  // Soft readonly: Claude cannot match Cursor readonly:true; Bash may remain available.
+  if (readonly) fm.disallowedTools = 'Write, Edit, NotebookEdit'
   return formatFrontmatter(fm) + body
 }
 
@@ -315,9 +305,13 @@ function buildAgentOutputs() {
     const name = frontmatter.name || basename(file, '.md')
     const description = frontmatter.description || ''
     const readonly = frontmatter.readonly === true
+    const model =
+      typeof frontmatter.model === 'string' && frontmatter.model
+        ? frontmatter.model
+        : 'inherit'
     out.set(file, {
       cursor: composed,
-      claude: expectedClaudeAgent(name, description, body, readonly),
+      claude: expectedClaudeAgent(name, description, body, readonly, model),
       github: expectedCopilotAgent(name, description, body),
     })
   }
@@ -395,6 +389,7 @@ function syncCursorHooks() {
   const kitHooks = {
     sessionEnd: [{ command: CURSOR_GATE }],
     subagentStart: [{ command: CURSOR_GATE, failClosed: true }],
+    subagentStop: [{ command: CURSOR_GATE }],
     preToolUse: [
       { command: CURSOR_GATE, matcher: 'Task', failClosed: true },
     ],
@@ -424,6 +419,11 @@ function syncCursorHooks() {
   doc.hooks.subagentStart = mergeHookEntries(
     doc.hooks.subagentStart,
     kitHooks.subagentStart,
+    sameCmd,
+  )
+  doc.hooks.subagentStop = mergeHookEntries(
+    doc.hooks.subagentStop,
+    kitHooks.subagentStop,
     sameCmd,
   )
   doc.hooks.preToolUse = mergeHookEntries(
@@ -520,6 +520,7 @@ ${ruleList}
 
 After editing canonical sources under \`.agents/\`, run \`node scripts/sync-tool-adapters.mjs\`.
 Drift check: \`node scripts/sync-tool-adapters.mjs --check\`.
+Skills inventory (setup runs this): \`node scripts/sync-project-skills.mjs\` / \`--check\`.
 `,
   )
 }
@@ -552,11 +553,32 @@ function checkDrift() {
   const kitSkills = listKitSkillNames()
   for (const root of ['.cursor/skills', '.claude/skills', '.github/skills']) {
     for (const name of kitSkills) {
-      const sp = join(SKILLS_DIR, name, 'SKILL.md')
-      const dp = join(ROOT, root, name, 'SKILL.md')
-      if (!existsSync(sp)) continue
-      if (!existsSync(dp) || read(sp) !== read(dp)) {
-        mismatches.push(`drift ${root}/${name}/SKILL.md`)
+      const skillSrc = join(SKILLS_DIR, name)
+      if (!existsSync(skillSrc)) continue
+      for (const f of readdirSync(skillSrc)) {
+        const sp = join(skillSrc, f)
+        if (!statSync(sp).isFile()) continue
+        const dp = join(ROOT, root, name, f)
+        if (!existsSync(dp) || read(sp) !== read(dp)) {
+          mismatches.push(`drift ${root}/${name}/${f}`)
+        }
+      }
+    }
+  }
+
+  const claudeMd = join(ROOT, 'CLAUDE.md')
+  if (!existsSync(claudeMd)) mismatches.push('missing CLAUDE.md')
+
+  const appendBlocks = join(SKILLS_DIR, 'setup', 'append-blocks.md')
+  if (existsSync(appendBlocks)) {
+    const ab = read(appendBlocks)
+    for (const needle of [
+      'skills-inventory.md',
+      'mcp-usage.md',
+      'Human approve',
+    ]) {
+      if (!ab.includes(needle)) {
+        mismatches.push(`append-blocks.md missing "${needle}"`)
       }
     }
   }

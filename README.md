@@ -10,9 +10,10 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 |------|------|
 | `.agents/agents/` | Canonical specialists (`manager`, `planner`, `frontend`, …); protocol markers composed at sync |
 | `.agents/protocols/` | Shared worker protocol variants (`implement`, `readonly`, `document`) + ref-resolution |
-| `.agents/skills/` | `setup`, `agent-memory`, `brief-hygiene`, `verify-evidence`, `issue-intake` |
+| `.agents/skills/` | `setup`, `sync-project-skills`, `agent-memory`, `brief-hygiene`, `verify-evidence`, `issue-intake`, … |
 | `.agents/rules/` | Always-on: TDD, Karpathy, Context7. Path-only stub: `design-system.md` (via `AGENTS.md` pointer) |
-| `.agents/memory/decisions.md` | Append-only decision log (incl. MCP usage entries) |
+| `.agents/memory/decisions.md` | Append-only product/design decision log |
+| `.agents/memory/mcp-usage.md` | Append-only MCP telemetry (server/tool/outcome) |
 | `.agents/memory/install-audit.md` | When install kept project `AGENTS.md` / `CLAUDE.md` |
 | `.agents/hooks/` | Call-graph gate core + Cursor/Claude adapters |
 | `.cursor/` | Generated Cursor adapters (agents, skills, rules, hooks) |
@@ -21,6 +22,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | `AGENTS.md` | Shared stack card (customize per project) |
 | `CLAUDE.md` | Thin Claude entrypoint pointing at `AGENTS.md` + rules |
 | `scripts/sync-tool-adapters.mjs` | Regenerate / `--check` tool adapters from `.agents/` |
+| `scripts/sync-project-skills.mjs` | Inventory kit vs project skills → `AGENTS.md` + `.agents/memory/skills-inventory.md` |
 | `.gitignore` | Ignores hook state dirs |
 
 ## Feature matrix
@@ -33,10 +35,8 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
 | Call-graph gate (no worker nesting) | **hard** (hooks) | **hard** (hooks) | **soft** (prompt only) |
-| Readonly agents (no file writes) | `readonly: true` frontmatter | `disallowedTools: Write, Edit` | **soft** (prompt only; no `tools` allowlist so MCP works) |
+| Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
 | Sync safety | Upserts kit agents/skills only; preserves foreign files; merges hooks | same | same |
-| Manager token cost in final report | best-effort if host exposes usage | best-effort | best-effort |
-
 ## Install into a project
 
 Recommended path: install from GitHub into the project root, then ask your agent to run **setup**.
@@ -131,26 +131,28 @@ If the project already has `.github/` content (workflows, etc.), copy only the t
 ### After install
 
 1. Ignore rules: the GitHub installer merges them; for rsync/manual, ensure `.gitignore` includes `.agents/hooks/state/` (and `.cursor/hooks/state/` if listed).
-2. Fill `AGENTS.md` via the **setup** skill (`run setup`). If files were kept, complete append blocks from setup / `.agents/skills/setup/append-blocks.md`.
+2. Fill `AGENTS.md` via the **setup** skill (`run setup`). Setup **always** runs `node scripts/sync-project-skills.mjs` after writing the stack card. If files were kept, complete append blocks from setup / `.agents/skills/setup/append-blocks.md`.
 3. Confirm worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` (excluding `manager`).
 4. After any edit under `.agents/`, run:
 
 ```bash
 node scripts/sync-tool-adapters.mjs
 node scripts/sync-tool-adapters.mjs --check
+node scripts/sync-project-skills.mjs --check
 ```
 
 ## How to use
 
-- Multi-domain or multi-step work → invoke **`manager`** (it plans via `planner`, dispatches workers, relays decisions). Final report includes **Token cost** when the host exposes usage (otherwise `unavailable`).
-- Single clear specialist with known scope → you may invoke that agent directly; still use Modes and the Output contract.
+- Multi-domain or multi-step work → invoke **`manager`** (it plans via `planner`, dispatches workers, relays decisions).
+- Single clear specialist with known scope → you may invoke that agent directly; still use Modes and the worker-report JSON fence.
 - Durable product choices → manager reads agent-memory; after a settled decision, manager briefs `documenter` to append.
 - Sync upserts kit-owned agents/skills only; foreign files under `.cursor/agents/` (etc.) are left alone. Hooks are merged, not wiped.
 
 ## Customize checklist
 
-- [ ] Run **setup** skill (or fill `AGENTS.md` by hand): stack, ownership, narrow commands, required env
+- [ ] Run **setup** skill (or fill `AGENTS.md` by hand): stack, ownership, narrow commands, required env — setup runs skills inventory sync
 - [ ] If install kept `AGENTS.md` / `CLAUDE.md`: append missing kit sections (setup will offer copy-paste blocks); check `.agents/memory/install-audit.md`
+- [ ] Optional: pin agent `model:` in `.agents/agents/<name>.md` (kit default is all `inherit`) to slugs your host’s picker exposes, then sync adapters
 - [ ] Optional: **Design system** + **Frontend / Backend / API** + **Cloud/DevOps/Infrastructure/Security/Risk standards** (path or URL). URLs load via **MCP only**
 - [ ] Optional: **Cloud platform** (`aws` | `azure` | `gcp` | `multi` | `n/a`)
 - [ ] Optional: **Required MCP** / **Standards MCP** so the manager can prewarm before dispatch
@@ -159,6 +161,7 @@ node scripts/sync-tool-adapters.mjs --check
 - [ ] Optional: trim agents — remove from `.agents/agents/`, `WORKERS`, routing; prefer skills over new agents (see `docs/routing-scenarios.md` specialist-cap)
 - [ ] Confirm required MCPs (Context7, issue trackers, doc sources) are available when listed
 - [ ] Re-run `node scripts/sync-tool-adapters.mjs` after canonical edits; use `--check` for drift
+- [ ] After adding project skills: `node scripts/sync-project-skills.mjs` (or re-run setup)
 - [ ] Routing drills: `docs/routing-scenarios.md` + `node --test scripts/routing-scenarios.test.mjs`
 
 ## Authoring (skills, rules, agents)
@@ -184,11 +187,17 @@ Edit only under `.agents/`, then sync. Do not hand-edit generated `.cursor/` / `
 ### Agents
 
 1. Prefer a **skill** or **standards** slot over a new worker (specialist-cap — `docs/routing-scenarios.md`).
-2. Add `.agents/agents/<name>.md` (`name`, `description`, optional `readonly: true`).
+2. Add `.agents/agents/<name>.md` (`name`, `description`, optional `readonly: true`, `model:` slug or `inherit`).
 3. Add the basename to `WORKERS` in `.agents/hooks/gate-core.mjs` (required or sync fails).
-4. Update manager / planner / `AGENTS.md` routing tables.
-5. Add/update a row in `docs/routing-scenarios.md` + `docs/routing-scenarios.json`; run `node --test scripts/routing-scenarios.test.mjs`.
-6. Sync. Trim unused specialists the same way (remove file + `WORKERS` entry + routing rows).
+4. Update `AGENTS.md` **Agents & routing** (canonical); manager/planner keep notes only; set optional `model:` on the new agent (default `inherit`).
+5. Add/update a row in `docs/routing-scenarios.md` + `docs/routing-scenarios.json` (include `model`); run `node --test scripts/routing-scenarios.test.mjs`.
+6. Sync. Adapter sync preserves `model:` on Cursor copies; other hosts use the same pin for titles/briefs (enforcement only where the runtime supports it). Trim unused specialists the same way (remove file + `WORKERS` entry + routing rows).
+
+### Project skills inventory
+
+1. Run `node scripts/sync-project-skills.mjs` (setup always does this).
+2. Reviews kit vs project skills; patches `AGENTS.md` **Skills** and writes `.agents/memory/skills-inventory.md`.
+3. `--check` fails on drift. Never deletes foreign skill dirs.
 
 Protocol markers: `<!-- protocol:implement|readonly|document -->` are inlined from `.agents/protocols/` at sync. Workers must end reports with a worker-report JSON fence (`.agents/schemas/worker-report.schema.json`).
 

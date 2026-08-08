@@ -10,14 +10,21 @@ description: >-
 
 Prefer `AGENTS.md`. Load when the brief is perf-scoped.
 
+## Checklist
+
+- [ ] **CWV / UX**: LCP element, CLS sources, INP/long tasks (UI → frontend)
+- [ ] **Bundle**: duplicate deps, oversized client imports, missing code-split
+- [ ] **Caching**: cache headers / stale CDN / over-fetch on navigation
+- [ ] **Queries**: N+1, missing indexes, over-select, unbounded lists (server → backend)
+- [ ] **Waterfall**: serial awaits that could be parallel; blocking server round-trips
+
 ## Steps
 
 1. Require a **named scope** and success metric when possible (LCP, bundle kB, query count).
-2. Pick owner: UI/CWV/bundle/client caching → **`frontend`**; query/N+1/server runtime → **`backend`**.
-3. Find narrow commands from `AGENTS.md` / `package.json` (perf, lighthouse, bundle analyze).
+2. Pick owner: UI/CWV/bundle/client → **`frontend`**; query/N+1/server → **`backend`**.
+3. Find narrow commands from `AGENTS.md` / `package.json`.
 4. Baseline; separate **pre-existing** vs introduced issues.
-5. Audit or implement per Mode. Prefer **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`).
-6. Broad product redesign → stay in owning implementer; do not invent new architecture.
+5. Prefer **verify-evidence**. Broad redesign → owning implementer; do not invent architecture.
 
 ## Findings shape
 

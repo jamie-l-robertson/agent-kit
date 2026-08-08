@@ -67,6 +67,35 @@ export function callerRole(state, ids) {
 }
 
 /**
+ * Resolve effective caller role for spawn gating.
+ * - Claude callerAgentType wins when it is manager/worker
+ * - Mapped parent/caller/conversation ids → that role
+ * - parentConversationId or callerAgentId present but unmapped → `unknown` (fail closed)
+ * - No parent/caller id → `root`
+ */
+export function resolveEffectiveCaller(state, normalized) {
+  const typed = normalized.callerAgentType
+  if (WORKERS.has(typed) || typed === MANAGER) return typed
+
+  const parentOrCaller = [
+    normalized.callerAgentId,
+    normalized.parentConversationId,
+  ].filter(Boolean)
+
+  for (const id of parentOrCaller) {
+    if (state.roles[id]) return state.roles[id]
+  }
+  if (
+    normalized.conversationId &&
+    state.roles[normalized.conversationId]
+  ) {
+    return state.roles[normalized.conversationId]
+  }
+  if (parentOrCaller.length > 0) return 'unknown'
+  return 'root'
+}
+
+/**
  * Normalize a tool-specific payload into:
  * {
  *   event: string,
@@ -193,21 +222,16 @@ export function decide(normalized) {
     return { action: 'allow' }
   }
 
-  const role = callerRole(state, [
-    normalized.callerAgentId,
-    normalized.parentConversationId,
-    normalized.conversationId,
-  ])
-  // Claude: when hook fires inside a subagent, agent_type is the caller
-  const effectiveRole =
-    WORKERS.has(normalized.callerAgentType) || normalized.callerAgentType === MANAGER
-      ? normalized.callerAgentType
-      : role
+  const effectiveRole = resolveEffectiveCaller(state, normalized)
 
-  if (WORKERS.has(effectiveRole)) {
+  if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
+    const who =
+      effectiveRole === 'unknown'
+        ? 'unknown caller (parent/caller id not in role map)'
+        : `worker \`${effectiveRole}\``
     return {
       action: 'deny',
-      message: `Blocked: worker \`${effectiveRole}\` cannot spawn subagents. Return to manager with Status: blocked (nesting/policy) — manager re-dispatches.`,
+      message: `Blocked: ${who} cannot spawn subagents. Return to manager with Status: blocked (nesting/policy) — manager re-dispatches.`,
     }
   }
 

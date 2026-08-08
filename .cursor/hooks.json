@@ -18,6 +18,11 @@
         "matcher": "Task",
         "failClosed": true
       }
+    ],
+    "subagentStop": [
+      {
+        "command": "node .agents/hooks/adapters/cursor.mjs"
+      }
     ]
   }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "cursor-agent-kit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs",
+    "sync": "node scripts/sync-tool-adapters.mjs",
+    "check": "node scripts/sync-tool-adapters.mjs --check && node scripts/sync-project-skills.mjs --check"
+  }
+}

@@ -8,16 +8,26 @@ description: >-
 
 # A11y / WCAG
 
-Prefer `AGENTS.md`. Owner is usually **`frontend`** (fixes) or **`tester`** (harness only).
+Prefer `AGENTS.md`. Owner is usually **`frontend`** (fixes) or **`tester`** (harness only). Default bar **WCAG 2.2 AA** unless briefed otherwise.
+
+## Checklist (triage)
+
+- [ ] Keyboard: operable without mouse; no traps; visible focus
+- [ ] Name/role/value: controls have accessible names; images alt or decorative
+- [ ] Forms: labels, errors announced, required indicated
+- [ ] Structure: headings/landmarks sensible; skip link if app shell
+- [ ] Contrast: text/UI via existing tokens (new tokens → needs-decision)
+- [ ] Motion: respect `prefers-reduced-motion` for motion you add
+- [ ] Target size / reflow: no critical content loss at zoom/narrow widths
+- [ ] Live regions: status/errors announced when dynamic
 
 ## Steps
 
 1. Require a **named scope**. Whole-site audit without scope → `needs-decision`.
 2. Map each issue to **WCAG id** + severity + location.
-3. Prefer existing design-system tokens for contrast; new tokens/layout redesign → note for frontend constraints / `needs-decision`.
-4. Mode omitted or audit ask → findings only. `implement` → surgical fixes only.
-5. Prefer **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`) for a11y/e2e commands. Never claim assistive-tech verification you did not perform.
-6. Harness/config/flake only → owning agent is `tester`, not product UI rewrites.
+3. Mode omitted or audit ask → findings only. `implement` → surgical fixes only.
+4. Prefer **verify-evidence** for a11y/e2e commands. Never claim AT verification you did not perform.
+5. Harness/config/flake only → `tester`.
 
 ## Findings shape
 

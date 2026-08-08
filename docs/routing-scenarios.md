@@ -1,6 +1,6 @@
 # Routing scenarios
 
-Consistent routing regression drills for this agent kit. **JSON twin** [`routing-scenarios.json`](routing-scenarios.json) is authoritative for CI; keep this table in sync in the same change.
+Consistent routing regression drills for this agent kit. **JSON twin** [`routing-scenarios.json`](routing-scenarios.json) is authoritative for fixture CI (coverage, md twin, model frontmatter) — not an LLM routing oracle. Keep this table in sync in the same change. Manual dry-runs go in [`routing-scenario-results.md`](routing-scenario-results.md).
 
 ## Purpose
 
@@ -16,44 +16,46 @@ Skills (`a11y-wcag`, `perf-audit`, `architecture-review`, `code-review`) are **n
 
 ## Pass / fail
 
-- Each row has `primary` and `expect[]` (allowed agents for that scenario, including orchestrator steps).
+- Each row has `primary`, `model`, and `expect[]` (allowed agents for that scenario, including orchestrator steps).
 - **Any route to an agent outside `expect` is a fail.**
+- **Wrong model** vs the primary’s configured `model:` (kit default `inherit`) is a fail when dry-running spawn titles/dispatch.
+- `model` must match the primary agent’s `model:` frontmatter (`n/a` for `no-owner`).
 - `risk` only when listed in `expect` (PII/compliance asks — e.g. #15, #17, #18).
 - `no-owner` means tell the user / `blocked` — not an agent spawn.
 
 ## Coverage rule
 
-Every member of `WORKERS` in `.agents/hooks/gate-core.mjs` plus `manager` must appear as **`primary` at least once** (CI enforces this). Keep a `no-owner` negative case. Optional negative rows for peer confusion (security≠risk, devops≠infra) are encouraged.
+Every member of `WORKERS` in `.agents/hooks/gate-core.mjs` plus `manager` must appear as **`primary` at least once** (`scripts/routing-scenarios.test.mjs` in CI). Keep a `no-owner` negative case. Optional negative rows for peer confusion (security≠risk, devops≠infra) are encouraged.
 
 ## Scenarios
 
-| # | Ask | Primary | Expect (allowed) |
-|---|-----|---------|------------------|
-| 1 | Multi-domain ship with unclear split | `manager` → `planner` | manager, planner |
-| 18 | PII in logs (retention/redaction), not an auth bug | `risk` | risk (not security) |
-| 19 | GH Actions secret *reference* wiring | `devops` | devops (not infrastructure) |
-| 2 | Issue-backed / multi-step plan only | `planner` | planner |
-| 3 | Restyle landing hero / UI | `frontend` | frontend |
-| 4 | API route / schema (no PII) | `backend` | backend |
-| 5 | Fix axe/WCAG failure | `frontend` (+ a11y-wcag) | frontend |
-| 6 | Unit/e2e / flake harness | `tester` | tester |
-| 7 | Diff/PR review | `reviewer` (+ code-review) | reviewer |
-| 8 | Agent-memory / handoff doc | `documenter` | documenter |
-| 9 | Session/cookie / secrets / CVE | `security` | security |
-| 10 | Module boundaries / ADR | `planner` (+ architecture-review; ADR → documenter) | planner, documenter |
-| 11 | Lighthouse / bundle / UI perf | `frontend` (+ perf-audit) | frontend |
-| 12 | Query/N+1 / server perf | `backend` (+ perf-audit) | backend |
-| 13 | Failing GitHub Action | `devops` | devops |
-| 14 | Terraform/DNS/secret-store | `infrastructure` | infrastructure |
-| 15 | PII in logs / retention | `risk` | risk |
-| 16 | Pure cloud-console DNS, no IaC/CLI | no-owner | no-owner |
-| 17 | Mixed: API email field + UI form | `planner` order | planner, backend, frontend, risk, tester, reviewer |
+| # | Ask | Primary | Model | Expect (allowed) |
+|---|-----|---------|-------|------------------|
+| 1 | Multi-domain ship with unclear split | `manager` → `planner` | `inherit` | manager, planner |
+| 18 | PII in logs (retention/redaction), not an auth bug | `risk` | `inherit` | risk (not security) |
+| 19 | GH Actions secret *reference* wiring | `devops` | `inherit` | devops (not infrastructure) |
+| 2 | Issue-backed / multi-step plan only | `planner` | `inherit` | planner |
+| 3 | Restyle landing hero / UI | `frontend` | `inherit` | frontend |
+| 4 | API route / schema (no PII) | `backend` | `inherit` | backend |
+| 5 | Fix axe/WCAG failure | `frontend` (+ a11y-wcag) | `inherit` | frontend |
+| 6 | Unit/e2e / flake harness | `tester` | `inherit` | tester |
+| 7 | Diff/PR review | `reviewer` (+ code-review) | `inherit` | reviewer |
+| 8 | Agent-memory / handoff doc | `documenter` | `inherit` | documenter |
+| 9 | Session/cookie / secrets / CVE | `security` | `inherit` | security |
+| 10 | Module boundaries / ADR | `planner` (+ architecture-review; ADR → documenter) | `inherit` | planner, documenter |
+| 11 | Lighthouse / bundle / UI perf | `frontend` (+ perf-audit) | `inherit` | frontend |
+| 12 | Query/N+1 / server perf | `backend` (+ perf-audit) | `inherit` | backend |
+| 13 | Failing GitHub Action | `devops` | `inherit` | devops |
+| 14 | Terraform/DNS/secret-store | `infrastructure` | `inherit` | infrastructure |
+| 15 | PII in logs / retention | `risk` | `inherit` | risk |
+| 16 | Pure cloud-console DNS, no IaC/CLI | no-owner | n/a | no-owner |
+| 17 | Mixed: API email field + UI form | `planner` order | `inherit` | planner, backend, frontend, risk, tester, reviewer |
 
 ## Result log template
 
-| id | expected | actual | pass/fail | notes |
-|----|----------|--------|-----------|-------|
-| 1 | | | | |
+| id | expected | model | actual | pass/fail | notes |
+|----|----------|-------|--------|-----------|-------|
+| 1 | | | | | |
 
 ## When adding an agent
 

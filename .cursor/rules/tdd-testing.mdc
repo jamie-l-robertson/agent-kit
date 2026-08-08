@@ -27,7 +27,7 @@ Generic examples (replace with project scripts in `AGENTS.md`):
 | A11y | `<pm> test:a11y` (or project equivalent) |
 | Full suite | only when explicitly asked |
 
-For Playwright e2e/a11y when the project uses them: attempt the run first (`webServer` can start the dev server; allow ~180s cold start). Reserve blocked for failed boot, auth, or missing required env secrets from `AGENTS.md` — do not silently skip.
+For Playwright e2e/a11y when the project uses them: follow **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`) for cold-start and blocked rules. Do not silently skip.
 
 ## Where to put tests
 
