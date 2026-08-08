@@ -1,0 +1,3 @@
+# Agent kit — ignore hook runtime state
+.agents/hooks/state/
+.cursor/hooks/state/

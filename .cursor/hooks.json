@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionEnd": [
+      {
+        "command": "node .agents/hooks/adapters/cursor.mjs"
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "node .agents/hooks/adapters/cursor.mjs",
+        "failClosed": true
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "node .agents/hooks/adapters/cursor.mjs",
+        "matcher": "Task",
+        "failClosed": true
+      }
+    ]
+  }
+}

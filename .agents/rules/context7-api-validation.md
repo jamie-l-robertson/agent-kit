@@ -1,0 +1,26 @@
+---
+description: Validate library and API usage against Context7 MCP docs before implementing
+---
+
+# Context7 API validation
+
+When writing or changing code that calls **external libraries, SDKs, REST APIs, CLIs, or platform services** (including Supabase, Expo, React Native, routing, auth, and native modules), **do not rely on memory alone**.
+
+## Required workflow
+
+1. **Resolve the library** — Use the Context7 MCP `resolve-library-id` tool with the official library name and a short query describing the task (unless the user already gave a Context7 library ID like `/org/project` or `/org/project/version`).
+2. **Query current docs** — Use Context7 MCP `query-docs` with that `libraryId` and a specific question (endpoints, options, headers, migration notes, breaking changes, Expo/RN version constraints).
+3. **Implement to match** — Align code, env vars, and error handling with what the docs returned. If docs conflict with existing code, flag it and prefer the documented behavior unless the user overrides.
+4. **Tool hygiene** — Before calling any MCP tool, read its schema/descriptor in the workspace `mcps` folder when available. Never put secrets, tokens, or PII in Context7 queries.
+
+## When this applies
+
+- Adding or editing **API routes**, **Supabase** queries/RPC/RLS assumptions, **fetch** calls, **SDK clients**, **CLI usage**, or **config** keyed off provider docs.
+- **Debugging** failures where behavior may have changed in a recent library release.
+
+## When you may skip
+
+- Pure local refactors with **no** external API surface change.
+- Trivial renames or formatting **unless** they touch exported types that mirror an external contract.
+
+If unsure whether a change touches an external contract, **query Context7** anyway.
