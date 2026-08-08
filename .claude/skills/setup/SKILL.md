@@ -7,6 +7,7 @@ description: >-
   AGENTS.md still has CUSTOMIZE/placeholder comments, after copying the kit into
   a project, or when the user asks to set up, customize, or configure the agent
   stack card.
+x-owner: agent-kit
 ---
 
 # Agent kit setup (AGENTS.md)
@@ -46,7 +47,10 @@ Setup progress:
 
 ### 0. Existing AGENTS.md / CLAUDE.md (project-owned)
 
-If `.agents/memory/install-audit.md` has `kept-project` for `AGENTS.md` / `CLAUDE.md`, **or** those files exist but lack kit-required headings (Resolving Design system / standards refs, Agents & routing, Memory, Skills, Always-on rules):
+If `.agents/memory/install-audit.md` has `kept-project` for `AGENTS.md` / `CLAUDE.md`, **or** kit-required sections are missing:
+
+**AGENTS.md kit sections (check these):** `### Resolving Design system / standards refs`, `## Agents & routing`, `## Memory`, Stack bullet `**Skills**:` (not a heading), `## No owner`.  
+**CLAUDE.md kit sections:** `## Always-on rules`, Agents & skills / sync notes (see append-blocks). Do **not** require an AGENTS heading named “Always-on rules” or “Skills”.
 
 1. Tell the user clearly: the project is using **its own** file(s); kit-required sections may be missing and must be **appended** (not silently overwritten).
 2. Read [`.agents/skills/setup/append-blocks.md`](append-blocks.md). For each missing block, show the fenced copy-paste content and ask them to paste — or confirm you may append with their permission.
@@ -88,13 +92,13 @@ Ask only for fields still missing after inference. Suggested order:
 2. **Database** — or `none` / `n/a`
 3. **Package manager** — confirm lockfile detection
 4. **UI** — styling system
-5. **Design system** — repo path or `https://` URL, or `n/a`. Prefer `.agents/rules/design-system.md` (kit stub) or an existing project doc. If URL: do not fetch it; note workers need MCP.
-6. **Design system adherence** — only if Design system is set: `strict` | `standard` | `loose` (recommend `standard`). If Design system is `n/a`, write `n/a`.
-7. **Frontend standards** — path, URL, or `n/a` (infer `docs/standards/frontend.md` if present)
+5. **Design system** — repo path or `https://` URL, or `n/a`. Prefer an existing project doc with real content. Kit stub `.agents/rules/design-system.md` is empty headings only — **default `n/a`** until the stub (or another file) has substantive content. If URL: do not fetch it; note workers need MCP.
+6. **Design system adherence** — only if Design system is a real ref: `strict` | `standard` | `loose` (recommend `standard`). If Design system is `n/a`, write `n/a`.
+7. **Frontend standards** — path, URL, or `n/a` (infer `docs/standards/frontend.md` if present and non-empty)
 8. **Backend standards** — path, URL, or `n/a`
 9. **API standards** — path, URL, or `n/a`
 10. **Cloud platform** — `aws` | `azure` | `gcp` | `multi` | `n/a` (infer from `*.tf` / Pulumi / CDK / Bicep when possible)
-11. **Cloud / DevOps / Infrastructure / Security / Risk standards** — each path, URL, or `n/a` (recommend `.agents/rules/*-standards.md` stubs or `docs/standards/...` if present)
+11. **Cloud / DevOps / Infrastructure / Security / Risk standards** — each path, URL, or `n/a`. Untouched kit stubs under `.agents/rules/*-standards.md` (empty headings) → write **`n/a`**, do not point stack slots at empty stubs.
 12. **Standards MCP** — if any standards/design-system ref is a URL: MCP server id hint (e.g. `notion`, `confluence`, `github`) or `unknown` (workers `blocked` until MCP exists). Else `n/a`.
 13. **Required MCP** — comma-separated server ids to prewarm (e.g. `github, notion, context7`) or `none`. Include Standards MCP + issue trackers the team uses.
 14. **Server** — where server logic lives (paths or pattern)
@@ -133,15 +137,20 @@ This updates the **Skills** line and writes `.agents/memory/skills-inventory.md`
 
 ### 6. Post-setup checks (brief)
 
-After skills sync, verify and report (fix only if broken; do not expand scope):
+After skills sync, **always** run:
+
+```bash
+node scripts/check-agent-kit.mjs
+```
+
+That covers adapter drift (Cursor/Claude/Copilot), skills inventory, Cursor+Claude gate smoke, and Copilot nesting/report markers. Fix failures before Done.
+
+Also verify/report:
 
 1. `.gitignore` ignores `.agents/hooks/state/` (and legacy `.cursor/hooks/state/` if present).
-2. Canonical agents exist under `.agents/agents/`; adapter copies exist under `.cursor/agents/`, `.claude/agents/`, `.github/agents/`.
-3. Worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` basenames (excluding `manager`). Roster: `planner`, `frontend`, `backend`, `tester`, `documenter`, `reviewer`, `security`, `devops`, `infrastructure`, `risk` — trim unused via `WORKERS` + agent files (see README Authoring + specialist-cap in `docs/routing-scenarios.md`).
-4. Cursor hooks point at `.agents/hooks/adapters/cursor.mjs`; Claude `.claude/settings.json` hooks point at `.agents/hooks/adapters/claude.mjs`.
-5. `.agents/memory/skills-inventory.md` exists; `AGENTS.md` **Skills** lists kit + project (or project — none).
-6. If you edited `.agents/` sources, remind the user to run `node scripts/sync-tool-adapters.mjs` before commit.
-7. Remind: Context7 MCP needed if the Context7 rule stays enabled; other **Required MCP** servers must be installable for prewarm.
+2. Worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
+3. If you edited `.agents/` sources beyond setup fills, remind `node scripts/sync-tool-adapters.mjs` before commit.
+4. Remind: Context7 / other **Required MCP** must be installable for prewarm.
 
 ## Done criteria
 

@@ -33,6 +33,8 @@ export const WORKERS = new Set([
 ])
 export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
 
+const ROOT_ROLE = 'root'
+
 export function emptyState() {
   return { roles: {} }
 }
@@ -59,18 +61,24 @@ export function rememberRole(state, id, role) {
   state.roles[id] = role
 }
 
+export function clearRole(state, id) {
+  if (!id || !state.roles[id]) return
+  delete state.roles[id]
+}
+
 export function callerRole(state, ids) {
   for (const id of ids) {
     if (id && state.roles[id]) return state.roles[id]
   }
-  return 'root'
+  return ROOT_ROLE
 }
 
 /**
  * Resolve effective caller role for spawn gating.
  * - Claude callerAgentType wins when it is manager/worker
  * - Mapped parent/caller/conversation ids → that role
- * - parentConversationId or callerAgentId present but unmapped → `unknown` (fail closed)
+ * - Unmapped parent/caller + empty role map → `root` (bootstrap; avoids deny-all)
+ * - Unmapped parent/caller + non-empty map → `unknown` (fail closed)
  * - No parent/caller id → `root`
  */
 export function resolveEffectiveCaller(state, normalized) {
@@ -91,8 +99,10 @@ export function resolveEffectiveCaller(state, normalized) {
   ) {
     return state.roles[normalized.conversationId]
   }
-  if (parentOrCaller.length > 0) return 'unknown'
-  return 'root'
+  if (parentOrCaller.length > 0) {
+    return Object.keys(state.roles).length === 0 ? ROOT_ROLE : 'unknown'
+  }
+  return ROOT_ROLE
 }
 
 /**
@@ -187,6 +197,34 @@ export function normalizeClaudePayload(payload) {
   return { ...base, target: '', recordChild: false }
 }
 
+function isSessionStart(event) {
+  return event === 'sessionStart' || event === 'SessionStart'
+}
+
+function isSessionEnd(event) {
+  return event === 'sessionEnd' || event === 'SessionEnd'
+}
+
+function isSubagentStart(event) {
+  return event === 'subagentStart' || event === 'SubagentStart'
+}
+
+function isSubagentStop(event) {
+  return event === 'subagentStop' || event === 'SubagentStop'
+}
+
+function recordAgentRole(state, normalized, role) {
+  const ids = [normalized.subagentId, normalized.conversationId].filter(Boolean)
+  for (const id of ids) rememberRole(state, id, role)
+  return ids
+}
+
+function clearAgentRole(state, normalized) {
+  const ids = [normalized.subagentId, normalized.conversationId].filter(Boolean)
+  for (const id of ids) clearRole(state, id)
+  return ids
+}
+
 /**
  * @returns {{ action: 'allow'|'deny'|'noop', message?: string, record?: { id: string, role: string }, clearId?: string }}
  */
@@ -194,25 +232,39 @@ export function decide(normalized) {
   const state = loadState()
   const event = normalized.event
 
-  if (event === 'sessionStart' || event === 'SessionStart') {
-    return { action: 'noop' }
-  }
-
-  if (event === 'sessionEnd' || event === 'SessionEnd' || event === 'SubagentStop') {
-    const id = normalized.subagentId || normalized.sessionId || normalized.conversationId
-    if (id && state.roles[id]) {
-      delete state.roles[id]
+  if (isSessionStart(event)) {
+    const id =
+      normalized.sessionId ||
+      normalized.conversationId ||
+      normalized.subagentId
+    if (id) {
+      rememberRole(state, id, ROOT_ROLE)
       saveState(state)
     }
-    return { action: 'noop', clearId: id }
+    return {
+      action: 'noop',
+      record: id ? { id, role: ROOT_ROLE } : undefined,
+    }
   }
 
-  // Claude SubagentStart cannot block — record role mapping only
-  if (event === 'SubagentStart') {
-    const id = normalized.subagentId
+  if (isSessionEnd(event)) {
+    state.roles = {}
+    saveState(state)
+    return { action: 'noop', clearId: '*' }
+  }
+
+  if (isSubagentStop(event)) {
+    const cleared = clearAgentRole(state, normalized)
+    saveState(state)
+    return { action: 'noop', clearId: cleared[0] || '' }
+  }
+
+  // SubagentStart (Cursor/Claude) cannot block — record role mapping only
+  if (isSubagentStart(event)) {
     const role = normalized.target
+    const id = normalized.subagentId
     if (PROJECT_AGENTS.has(role) && id) {
-      rememberRole(state, id, role)
+      recordAgentRole(state, normalized, role)
       saveState(state)
     }
     return { action: 'noop', record: id && role ? { id, role } : undefined }
@@ -231,7 +283,7 @@ export function decide(normalized) {
         : `worker \`${effectiveRole}\``
     return {
       action: 'deny',
-      message: `Blocked: ${who} cannot spawn subagents. Return to manager with Status: blocked (nesting/policy) — manager re-dispatches.`,
+      message: `Blocked: ${who} cannot spawn subagents. Return to manager with status: blocked (nesting/policy) — manager re-dispatches.`,
     }
   }
 
@@ -239,6 +291,9 @@ export function decide(normalized) {
   const subagentId = normalized.subagentId
   if (normalized.recordChild !== false && PROJECT_AGENTS.has(target) && subagentId) {
     rememberRole(state, subagentId, target)
+    if (normalized.conversationId) {
+      rememberRole(state, normalized.conversationId, target)
+    }
     saveState(state)
   }
 

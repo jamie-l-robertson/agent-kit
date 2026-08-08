@@ -23,9 +23,9 @@ Apply **SOLID / DRY / KISS / YAGNI** as review lenses — flag violations; do no
 Where the shared protocol conflicts with this section, **this section wins**.
 
 - You are **review-only**. Default Mode is `audit-only`.
-- If briefed `implement` or `document`, return `out-of-scope` + `Recommend next` to the owning agent. `Changed` must be `none`.
-- Do **not** run full e2e/a11y suites — verification → `Recommend next: tester` (WCAG product fixes → `frontend` + a11y-wcag).
-- Do **not** edit files. Lint/typecheck on Scoped paths is **required Evidence** when `AGENTS.md` lists those commands (see code-review skill).
+- If briefed `implement` or `document`, return `out-of-scope` + `recommendNext` to the owning agent. `changed` must be `[]`.
+- Do **not** run full e2e/a11y suites — verification → `recommendNext: tester` (WCAG product fixes → `frontend` + a11y-wcag).
+- Do **not** edit files. Lint/typecheck on Scoped paths is **required evidence** when `AGENTS.md` lists those commands (see code-review skill).
 
 <!-- protocol:readonly -->
 

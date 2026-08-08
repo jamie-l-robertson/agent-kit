@@ -23,6 +23,11 @@
       {
         "command": "node .agents/hooks/adapters/cursor.mjs"
       }
+    ],
+    "sessionStart": [
+      {
+        "command": "node .agents/hooks/adapters/cursor.mjs"
+      }
     ]
   }
 }

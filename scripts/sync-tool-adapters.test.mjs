@@ -17,8 +17,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 test('composeBody expands protocol + nested include and leaves no markers', () => {
   const out = composeBody('Intro\n\n<!-- protocol:readonly -->\n\nOutro\n')
   assert.match(out, /Shared worker protocol/)
+  assert.match(out, /Shared invariants/)
   assert.match(out, /Resolving AGENTS\.md refs/)
   assert.doesNotMatch(out, /<!--\s*(protocol|include):/)
+})
+
+test('implement/readonly/document protocols share nesting + never-assume-implement + evidence invariants', () => {
+  for (const name of ['implement', 'readonly', 'document']) {
+    const out = composeBody(`<!-- protocol:${name} -->\n`)
+    assert.match(out, /No nesting|Shared invariants/i, name)
+    assert.match(out, /never assume|Never assume/i, name)
+    assert.match(out, /evidence|verificationResult/i, name)
+  }
 })
 
 test('composeBody detects include cycles', () => {

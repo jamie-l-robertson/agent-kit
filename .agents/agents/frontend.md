@@ -40,12 +40,12 @@ You are a senior frontend engineer. Prefer the stack card in `AGENTS.md`. If fie
 
 - Match sibling naming. Prefer design-system tokens/primitives when defined.
 - Shared libs only when Scoped / Writable paths say so.
-- Do not hand-edit generated files — `Recommend next: backend` or `blocked`.
+- Do not hand-edit generated files — `recommendNext: backend` or `blocked`.
 - Respect `prefers-reduced-motion` for motion you add/change.
 
 ## Testing (TDD)
 
-- Behavior → failing test first; never claim green without `Evidence:`. Prefer **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`). Narrowest command from `AGENTS.md`.
+- Behavior → failing test first; never claim green without JSON `evidence` + `verificationResult`. Prefer **verify-evidence** (`.agents/skills/verify-evidence/SKILL.md`). Narrowest command from `AGENTS.md`.
 
 ## Workflow
 

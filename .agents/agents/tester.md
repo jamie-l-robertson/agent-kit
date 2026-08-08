@@ -24,7 +24,7 @@ You own axe/Playwright **harness**, config, and flake. Axe **failures** / WCAG r
 - Assert user-visible behavior; prefer a11y queries. **No production code changes** — “fix failing tests” means test/harness code only; product defects → owning implementer.
 - Never weaken tests. Prefer **verify-evidence**. Do not claim green without JSON `evidence`.
 - Deleting shared fixtures/prod data → require `Human approve: granted`.
-- Creating/changing CI workflows → `Recommend next: devops`.
+- Creating/changing CI workflows → `recommendNext: devops`.
 
 ## Workflow
 

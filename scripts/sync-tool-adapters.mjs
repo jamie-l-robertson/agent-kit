@@ -21,6 +21,7 @@ import { dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WORKERS, MANAGER } from '../.agents/hooks/gate-core.mjs'
 import { KNOWN_KIT_SKILL_NAMES } from './kit-skill-names.mjs'
+import { mergeCursorHooks, mergeClaudeSettings } from './merge-host-config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -29,9 +30,6 @@ const AGENTS_DIR = join(ROOT, '.agents', 'agents')
 const SKILLS_DIR = join(ROOT, '.agents', 'skills')
 const RULES_DIR = join(ROOT, '.agents', 'rules')
 const PROTOCOLS_DIR = join(ROOT, '.agents', 'protocols')
-
-const CURSOR_GATE = 'node .agents/hooks/adapters/cursor.mjs'
-const CLAUDE_GATE = 'node .agents/hooks/adapters/claude.mjs'
 
 const MARKER_RE = /<!--\s*(?:protocol|include):[a-z0-9_-]+\s*-->/i
 
@@ -264,20 +262,49 @@ function removeStaleKitAgents(dir, kitBasenames) {
   }
 }
 
+function skillHasKitOwnerMarker(skillDir) {
+  const skillMd = join(skillDir, 'SKILL.md')
+  if (!existsSync(skillMd)) return false
+  return /(?:^|\n)x-owner:\s*agent-kit(?:\n|$)/.test(read(skillMd))
+}
+
+function stampKitSkillOwner(skillDir) {
+  const skillMd = join(skillDir, 'SKILL.md')
+  if (!existsSync(skillMd)) return
+  const raw = read(skillMd)
+  if (/(?:^|\n)x-owner:\s*agent-kit(?:\n|$)/.test(raw)) return
+  if (!raw.startsWith('---\n')) return
+  const end = raw.indexOf('\n---\n', 4)
+  if (end === -1) return
+  const stamped = `---\n${raw.slice(4, end)}\nx-owner: agent-kit\n---\n${raw.slice(end + 5)}`
+  write(skillMd, stamped.endsWith('\n') ? stamped : `${stamped}\n`)
+}
+
 function removeStaleKitSkills(destRoot, kitSkills) {
   if (!existsSync(destRoot)) return
   for (const name of readdirSync(destRoot)) {
     const p = join(destRoot, name)
     if (!statSync(p).isDirectory()) continue
-    if (KNOWN_KIT_SKILL_NAMES.has(name) && !kitSkills.has(name)) {
-      rmSync(p, { recursive: true, force: true })
+    const isKitNamed = KNOWN_KIT_SKILL_NAMES.has(name)
+    const marked = skillHasKitOwnerMarker(p)
+    if ((isKitNamed || marked) && !kitSkills.has(name)) {
+      // Only delete kit-owned copies — never wipe unmarked project skills
+      if (marked || isKitNamed) rmSync(p, { recursive: true, force: true })
     }
   }
 }
 
 function syncSkills() {
-  const kitSkills = new Set(listKitSkillNames())
-  for (const name of kitSkills) KNOWN_KIT_SKILL_NAMES.add(name)
+  // Only sync skills listed in the kit manifest (or present under .agents/skills and in manifest)
+  const onDisk = listKitSkillNames()
+  const kitSkills = new Set(
+    onDisk.filter((n) => KNOWN_KIT_SKILL_NAMES.has(n)),
+  )
+
+  // Stamp provenance on canonical sources so --check matches adapters
+  for (const name of kitSkills) {
+    stampKitSkillOwner(join(SKILLS_DIR, name))
+  }
 
   for (const destRoot of [
     join(ROOT, '.cursor', 'skills'),
@@ -374,66 +401,8 @@ function syncRules() {
   }
 }
 
-function mergeHookEntries(existingList, kitEntries, sameFn) {
-  const list = Array.isArray(existingList) ? [...existingList] : []
-  for (const kit of kitEntries) {
-    const idx = list.findIndex((e) => sameFn(e, kit))
-    if (idx >= 0) list[idx] = { ...list[idx], ...kit }
-    else list.push(kit)
-  }
-  return list
-}
-
 function syncCursorHooks() {
-  const path = join(ROOT, '.cursor', 'hooks.json')
-  const kitHooks = {
-    sessionEnd: [{ command: CURSOR_GATE }],
-    subagentStart: [{ command: CURSOR_GATE, failClosed: true }],
-    subagentStop: [{ command: CURSOR_GATE }],
-    preToolUse: [
-      { command: CURSOR_GATE, matcher: 'Task', failClosed: true },
-    ],
-  }
-
-  let doc = { version: 1, hooks: {} }
-  if (existsSync(path)) {
-    try {
-      doc = JSON.parse(read(path))
-      if (!doc || typeof doc !== 'object') doc = { version: 1, hooks: {} }
-      if (!doc.hooks || typeof doc.hooks !== 'object') doc.hooks = {}
-    } catch {
-      doc = { version: 1, hooks: {} }
-    }
-  }
-  if (doc.version == null) doc.version = 1
-
-  const sameCmd = (a, b) => a?.command === b?.command
-  const samePre = (a, b) =>
-    a?.command === b?.command && a?.matcher === b?.matcher
-
-  doc.hooks.sessionEnd = mergeHookEntries(
-    doc.hooks.sessionEnd,
-    kitHooks.sessionEnd,
-    sameCmd,
-  )
-  doc.hooks.subagentStart = mergeHookEntries(
-    doc.hooks.subagentStart,
-    kitHooks.subagentStart,
-    sameCmd,
-  )
-  doc.hooks.subagentStop = mergeHookEntries(
-    doc.hooks.subagentStop,
-    kitHooks.subagentStop,
-    sameCmd,
-  )
-  doc.hooks.preToolUse = mergeHookEntries(
-    doc.hooks.preToolUse,
-    kitHooks.preToolUse,
-    samePre,
-  )
-
-  write(path, `${JSON.stringify(doc, null, 2)}\n`)
-
+  mergeCursorHooks(ROOT, { failOnInvalidJson: true })
   write(
     join(ROOT, '.cursor', 'hooks', 'gate-subagents.mjs'),
     `#!/usr/bin/env node\nimport '../../.agents/hooks/adapters/cursor.mjs'\n`,
@@ -441,47 +410,7 @@ function syncCursorHooks() {
 }
 
 function syncClaudeSettings() {
-  const settingsPath = join(ROOT, '.claude', 'settings.json')
-  let existing = {}
-  if (existsSync(settingsPath)) {
-    try {
-      existing = JSON.parse(read(settingsPath))
-    } catch {
-      existing = {}
-    }
-  }
-
-  const hooks = { ...(existing.hooks || {}) }
-
-  const mergeByCommand = (arr, matcher, command) => {
-    const list = Array.isArray(arr) ? [...arr] : []
-    const kitEntry = matcher
-      ? { matcher, hooks: [{ type: 'command', command }] }
-      : { hooks: [{ type: 'command', command }] }
-    const idx = list.findIndex((e) => {
-      const cmds = (e.hooks || []).map((h) => h.command)
-      return cmds.includes(command) && (matcher ? e.matcher === matcher : !e.matcher)
-    })
-    if (idx >= 0) {
-      // Keep foreign sibling entries; replace only our gate entry
-      list[idx] = kitEntry
-    } else {
-      list.push(kitEntry)
-    }
-    return list
-  }
-
-  hooks.PreToolUse = mergeByCommand(
-    hooks.PreToolUse,
-    'Agent|Task',
-    CLAUDE_GATE,
-  )
-  hooks.SubagentStart = mergeByCommand(hooks.SubagentStart, null, CLAUDE_GATE)
-  hooks.SubagentStop = mergeByCommand(hooks.SubagentStop, null, CLAUDE_GATE)
-  hooks.SessionEnd = mergeByCommand(hooks.SessionEnd, null, CLAUDE_GATE)
-
-  existing.hooks = hooks
-  write(settingsPath, `${JSON.stringify(existing, null, 2)}\n`)
+  mergeClaudeSettings(ROOT, { failOnInvalidJson: true })
 }
 
 function alwaysOnRuleNames() {
@@ -495,13 +424,10 @@ function alwaysOnRuleNames() {
     .sort()
 }
 
-function syncClaudeMd() {
+export function expectedClaudeMdBody() {
   const ruleNames = alwaysOnRuleNames()
   const ruleList = ruleNames.map((n) => `- \`.agents/rules/${n}.md\``).join('\n')
-
-  write(
-    join(ROOT, 'CLAUDE.md'),
-    `# Claude Code — agent kit
+  return `# Claude Code — agent kit
 
 Follow the stack card in \`AGENTS.md\` for package manager, ownership, and narrow commands.
 
@@ -521,8 +447,25 @@ ${ruleList}
 After editing canonical sources under \`.agents/\`, run \`node scripts/sync-tool-adapters.mjs\`.
 Drift check: \`node scripts/sync-tool-adapters.mjs --check\`.
 Skills inventory (setup runs this): \`node scripts/sync-project-skills.mjs\` / \`--check\`.
-`,
-  )
+`
+}
+
+function claudeMdIsKeptProject() {
+  const audit = join(ROOT, '.agents', 'memory', 'install-audit.md')
+  if (!existsSync(audit)) return false
+  const text = read(audit)
+  // Look for kept-project entries naming CLAUDE.md
+  return /kept-project[\s\S]{0,200}\*\*Path\*\*:\s*`?CLAUDE\.md`?/i.test(text) ||
+    /\*\*Path\*\*:\s*`?CLAUDE\.md`?[\s\S]{0,200}kept-project/i.test(text)
+}
+
+function syncClaudeMd() {
+  const force = process.argv.includes('--force-claude-md')
+  if (!force && claudeMdIsKeptProject()) {
+    console.log('Skipped CLAUDE.md (install-audit kept-project; pass --force-claude-md to rewrite)')
+    return
+  }
+  write(join(ROOT, 'CLAUDE.md'), expectedClaudeMdBody())
 }
 
 function removeLegacyMemory() {
@@ -567,7 +510,80 @@ function checkDrift() {
   }
 
   const claudeMd = join(ROOT, 'CLAUDE.md')
-  if (!existsSync(claudeMd)) mismatches.push('missing CLAUDE.md')
+  if (!existsSync(claudeMd)) {
+    mismatches.push('missing CLAUDE.md')
+  } else if (!claudeMdIsKeptProject()) {
+    if (read(claudeMd) !== expectedClaudeMdBody()) {
+      mismatches.push('drift CLAUDE.md')
+    }
+  }
+
+  const cursorHooks = join(ROOT, '.cursor', 'hooks.json')
+  if (!existsSync(cursorHooks)) {
+    mismatches.push('missing .cursor/hooks.json')
+  } else {
+    try {
+      const doc = JSON.parse(read(cursorHooks))
+      const cmds = JSON.stringify(doc)
+      if (!cmds.includes('adapters/cursor.mjs')) {
+        mismatches.push('.cursor/hooks.json missing kit cursor gate command')
+      }
+      for (const key of [
+        'sessionStart',
+        'sessionEnd',
+        'subagentStart',
+        'subagentStop',
+        'preToolUse',
+      ]) {
+        if (!doc.hooks?.[key]) {
+          mismatches.push(`.cursor/hooks.json missing hooks.${key}`)
+        }
+      }
+    } catch (err) {
+      mismatches.push(
+        `invalid .cursor/hooks.json: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  const claudeSettings = join(ROOT, '.claude', 'settings.json')
+  if (!existsSync(claudeSettings)) {
+    mismatches.push('missing .claude/settings.json')
+  } else {
+    try {
+      const doc = JSON.parse(read(claudeSettings))
+      const blob = JSON.stringify(doc)
+      if (!blob.includes('adapters/claude.mjs')) {
+        mismatches.push('.claude/settings.json missing kit claude gate command')
+      }
+    } catch (err) {
+      mismatches.push(
+        `invalid .claude/settings.json: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  // Claude readonly agents must carry soft write disallows
+  for (const file of readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'))) {
+    const raw = read(join(AGENTS_DIR, file))
+    const { frontmatter } = parseFrontmatter(raw)
+    if (frontmatter.readonly === true || frontmatter.readonly === 'true') {
+      const claudePath = join(ROOT, '.claude', 'agents', file)
+      if (!existsSync(claudePath)) {
+        mismatches.push(`missing .claude/agents/${file}`)
+        continue
+      }
+      const { frontmatter: cf } = parseFrontmatter(read(claudePath))
+      const tools = String(cf.disallowedTools || '')
+      for (const need of ['Write', 'Edit', 'NotebookEdit']) {
+        if (!tools.includes(need)) {
+          mismatches.push(
+            `.claude/agents/${file} missing disallowedTools ${need}`,
+          )
+        }
+      }
+    }
+  }
 
   const appendBlocks = join(SKILLS_DIR, 'setup', 'append-blocks.md')
   if (existsSync(appendBlocks)) {

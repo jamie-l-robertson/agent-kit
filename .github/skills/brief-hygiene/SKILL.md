@@ -5,6 +5,7 @@ description: >-
   memory paste, Verify with, design system, standards refs, MCP prewarmed,
   Writable paths when parallel. Use when the manager (or planner emitting Worker
   briefs) is about to dispatch. Owns the canonical brief template.
+x-owner: agent-kit
 ---
 
 # Brief hygiene
@@ -30,6 +31,7 @@ Frontend / Backend / API standards: <each path|URL|n/a>
 Cloud platform: <aws|azure|gcp|multi|n/a>
 Cloud / DevOps / Infrastructure / Security / Risk standards: <each or n/a>
 Human approve: <granted|n/a>
+Approved destructive action: <command/env/resource or n/a>
 MCP prewarmed: <ids or none>
 Ticket / Depends: <optional>
 Constraints: <…>
@@ -66,7 +68,8 @@ Brief hygiene:
 | `Task` / `Success` | Imperative goal; Success must be checkable. |
 | `Mode` | Never omit. Never assume `implement`. |
 | `Model` | Canonical `model:` from `.agents/agents/<name>.md`. |
-| `Human approve` | `n/a` for non-destructive; `granted` required before destructive work. |
+| `Human approve` | `n/a` for non-destructive; `granted` required before destructive work. Definition: `.agents/protocols/human-approve.md`. |
+| `Approved destructive action` | When `Human approve: granted`, name the exact action/env/resource (not a blanket grant). |
 | `Decisions already made` | Settled choices for this task (or `none`). |
 | `Related agent-memory` | Always set on planner, implementer, reviewer. Explicit `none` = do not re-scan. |
 | `Constraints` | Hard limits (paths, deps, copy, time). |

@@ -7,7 +7,9 @@ import { MANAGER, WORKERS, PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs
 import { parseFrontmatter } from './sync-tool-adapters.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const scenarios = JSON.parse(readFileSync(join(root, 'docs/routing-scenarios.json'), 'utf8'))
+const scenarios = JSON.parse(
+  readFileSync(join(root, 'docs/agent-kit/routing-scenarios.json'), 'utf8'),
+)
 
 const RETIRED = new Set(['accessibility', 'performance', 'architect', 'cloud'])
 const ALLOWED = new Set([...PROJECT_AGENTS, 'no-owner'])
@@ -49,7 +51,7 @@ test('risk only on PII/compliance scenarios', () => {
 })
 
 test('markdown twin lists same ids/primary/expect as JSON', () => {
-  const md = readFileSync(join(root, 'docs/routing-scenarios.md'), 'utf8')
+  const md = readFileSync(join(root, 'docs/agent-kit/routing-scenarios.md'), 'utf8')
   for (const s of scenarios) {
     const row = md.split('\n').find((line) => line.startsWith(`| ${s.id} |`))
     assert.ok(row, `missing markdown row for scenario ${s.id}`)

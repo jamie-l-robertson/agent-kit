@@ -77,7 +77,7 @@ For Playwright e2e/a11y (when used): attempt first; cold-start / blocked rules �
 
 ## No owner (tell the user)
 
-Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns → `security`. PII/compliance → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
+Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns audit → `security` (fixes via manager → owning implementer; lockfile/CVE bumps → `backend`). PII/compliance audit → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
 
 <!-- CUSTOMIZE: add project-specific no-owner zones here. -->
 
@@ -97,11 +97,13 @@ Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — d
 | `infrastructure` | DNS-as-code, Terraform/Pulumi/CDK, cloud secret stores/automation |
 | `risk` | PII, retention, data classification / compliance (`audit-only`; manager routes fixes) |
 
+Dependency / lockfile / CVE **remediation** (after `security` audit) → `backend`. Auth product fixes may also go `backend` / `frontend` per ownership.
+
 `manager` · `planner` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — canonical: `.agents/agents/` (synced to `.cursor/agents/`, `.claude/agents/`, `.github/agents/`). Optional per-agent `model:` in those files (kit default `inherit`); sync after edits. **Destructive** work requires brief `Human approve: granted`.
 
 Call-graph gate: `.agents/hooks/` — hard deny of worker nesting on **Cursor** and **Claude Code**; **Copilot** is prompt policy only.
 
-Routing regression drills: [`docs/routing-scenarios.md`](docs/routing-scenarios.md) (JSON twin for fixture CI).
+Routing regression drills: [`docs/agent-kit/routing-scenarios.md`](docs/agent-kit/routing-scenarios.md) (JSON twin for fixture CI).
 
 ## Memory
 

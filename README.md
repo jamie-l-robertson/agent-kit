@@ -34,9 +34,11 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Skills | `.cursor/skills/` (generated) | `.claude/skills/` | `.github/skills/` |
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
-| Call-graph gate (no worker nesting) | **hard** (hooks) | **hard** (hooks) | **soft** (prompt only) |
+| Call-graph gate (no worker nesting) | **hard** (hooks; `sessionStart` + fail-closed after root seed) | **hard** (hooks) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit`) |
 | Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
-| Sync safety | Upserts kit agents/skills only; preserves foreign files; merges hooks | same | same |
+| Sync / install safety | Sync upserts kit agents/skills (`x-owner: agent-kit`); merges hooks. Install merges `.cursor/hooks.json` + `.claude/settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` | same | Upserts `.github/{agents,skills,instructions}` only — other `.github/` (e.g. workflows) preserved |
+| Health check | `node scripts/check-agent-kit.mjs` (adapters + Cursor/Claude gate smoke + Copilot markers + validator) | same | same |
+
 ## Install into a project
 
 Recommended path: install from GitHub into the project root, then ask your agent to run **setup**.
@@ -64,7 +66,7 @@ From a local checkout of this kit:
 /path/to/agent-kit/scripts/install.sh --from=/path/to/agent-kit
 ```
 
-The installer copies `.agents/`, tool adapters (`.cursor/`, `.claude/`, `.github/{agents,skills,instructions}/`), `scripts/`, `AGENTS.md`, and `CLAUDE.md`, and merges ignore rules into `.gitignore`. Existing `AGENTS.md` / `CLAUDE.md` are **kept** unless you pass `--force` or `AGENT_KIT_FORCE=1` — each keep is logged to `.agents/memory/install-audit.md` (project-owned file for auditing/support).
+The installer copies `.agents/`, tool adapters (`.cursor/`, `.claude/`, `.github/{agents,skills,instructions}/`), runtime `scripts/` (not `*.test.mjs`), kit docs into `docs/agent-kit/`, `AGENTS.md`, and `CLAUDE.md`, and merges ignore rules into `.gitignore`. Host hook configs are **merged** (foreign Cursor/Claude hooks and Claude `permissions`/`env` survive). Existing `AGENTS.md` / `CLAUDE.md` / filled `.agents/rules/*` stubs are **kept** unless you pass `--force` — keeps are logged to `.agents/memory/install-audit.md`. Later `sync-tool-adapters` skips rewriting a kept-project `CLAUDE.md` unless `--force-claude-md`.
 
 Then in the agent chat:
 
@@ -137,8 +139,7 @@ If the project already has `.github/` content (workflows, etc.), copy only the t
 
 ```bash
 node scripts/sync-tool-adapters.mjs
-node scripts/sync-tool-adapters.mjs --check
-node scripts/sync-project-skills.mjs --check
+node scripts/check-agent-kit.mjs
 ```
 
 ## How to use
@@ -146,7 +147,7 @@ node scripts/sync-project-skills.mjs --check
 - Multi-domain or multi-step work → invoke **`manager`** (it plans via `planner`, dispatches workers, relays decisions).
 - Single clear specialist with known scope → you may invoke that agent directly; still use Modes and the worker-report JSON fence.
 - Durable product choices → manager reads agent-memory; after a settled decision, manager briefs `documenter` to append.
-- Sync upserts kit-owned agents/skills only; foreign files under `.cursor/agents/` (etc.) are left alone. Hooks are merged, not wiped.
+- Sync upserts kit-owned agents/skills only (`x-owner: agent-kit` on synced skills); foreign files under `.cursor/agents/` (etc.) are left alone. Hooks/settings are merged, not wiped.
 
 ## Customize checklist
 
@@ -158,11 +159,11 @@ node scripts/sync-project-skills.mjs --check
 - [ ] Optional: **Required MCP** / **Standards MCP** so the manager can prewarm before dispatch
 - [ ] Optional: fill path-only stubs under `.agents/rules/` (`design-system.md`, `*-standards.md`) or point stack slots at your docs
 - [ ] Optional: extend “No owner” list
-- [ ] Optional: trim agents — remove from `.agents/agents/`, `WORKERS`, routing; prefer skills over new agents (see `docs/routing-scenarios.md` specialist-cap)
+- [ ] Optional: trim agents — remove from `.agents/agents/`, `WORKERS`, routing; prefer skills over new agents (see `docs/agent-kit/routing-scenarios.md` specialist-cap)
 - [ ] Confirm required MCPs (Context7, issue trackers, doc sources) are available when listed
 - [ ] Re-run `node scripts/sync-tool-adapters.mjs` after canonical edits; use `--check` for drift
 - [ ] After adding project skills: `node scripts/sync-project-skills.mjs` (or re-run setup)
-- [ ] Routing drills: `docs/routing-scenarios.md` + `node --test scripts/routing-scenarios.test.mjs`
+- [ ] Routing drills: `docs/agent-kit/routing-scenarios.md` + `node --test scripts/routing-scenarios.test.mjs`
 
 ## Authoring (skills, rules, agents)
 
@@ -186,11 +187,11 @@ Edit only under `.agents/`, then sync. Do not hand-edit generated `.cursor/` / `
 
 ### Agents
 
-1. Prefer a **skill** or **standards** slot over a new worker (specialist-cap — `docs/routing-scenarios.md`).
+1. Prefer a **skill** or **standards** slot over a new worker (specialist-cap — `docs/agent-kit/routing-scenarios.md`).
 2. Add `.agents/agents/<name>.md` (`name`, `description`, optional `readonly: true`, `model:` slug or `inherit`).
 3. Add the basename to `WORKERS` in `.agents/hooks/gate-core.mjs` (required or sync fails).
 4. Update `AGENTS.md` **Agents & routing** (canonical); manager/planner keep notes only; set optional `model:` on the new agent (default `inherit`).
-5. Add/update a row in `docs/routing-scenarios.md` + `docs/routing-scenarios.json` (include `model`); run `node --test scripts/routing-scenarios.test.mjs`.
+5. Add/update a row in `docs/agent-kit/routing-scenarios.md` + `docs/agent-kit/routing-scenarios.json` (include `model`); run `node --test scripts/routing-scenarios.test.mjs`.
 6. Sync. Adapter sync preserves `model:` on Cursor copies; other hosts use the same pin for titles/briefs (enforcement only where the runtime supports it). Trim unused specialists the same way (remove file + `WORKERS` entry + routing rows).
 
 ### Project skills inventory

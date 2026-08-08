@@ -52,9 +52,8 @@ function listDirs(abs) {
 
 export function listCanonicalKitSkillNames(root = ROOT) {
   const dir = join(root, '.agents', 'skills')
-  const names = listDirs(dir)
-  for (const n of names) KNOWN_KIT_SKILL_NAMES.add(n)
-  return new Set(names)
+  // Ownership = kit-skill-names manifest ∩ dirs present (not “every .agents/skills folder”)
+  return new Set(listDirs(dir).filter((n) => KNOWN_KIT_SKILL_NAMES.has(n)))
 }
 
 /**

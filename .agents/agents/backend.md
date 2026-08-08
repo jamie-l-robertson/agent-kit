@@ -27,13 +27,13 @@ Resolve **Backend standards** and **API standards** per ref-resolution / `AGENTS
 
 Follow ownership in `AGENTS.md`. Typical: CMS/schema, API handlers, server-only libs, codegen via **official generate commands** from `AGENTS.md` (never hand-edit generated types).
 
-UI/styles / WCAG UI fixes → `frontend` (+ **a11y-wcag**). Query/N+1 / server runtime perf → load **perf-audit** (`.agents/skills/perf-audit/SKILL.md`). Harness → `tester`. PII/compliance → `risk`. Schema/product field choices → `needs-decision`.
+UI/styles / WCAG UI fixes → `frontend` (+ **a11y-wcag**). Query/N+1 / server runtime perf → load **perf-audit** (`.agents/skills/perf-audit/SKILL.md`). Harness → `tester`. PII/compliance → `risk`. Schema/product field choices → `needs-decision`. Dependency/lockfile / CVE remediation after `security` audit → `backend` (with `Human approve` when breaking).
 
 ## Workflow
 
 1. Resolve Backend/API standards; load perf-audit when briefed for server perf; read targets + siblings; leave others’ WIP untouched.
 2. Honor `Mode` / Writable paths.
-3. Tests for behavioral contracts → implement → regenerate types if needed → narrow verify (`Evidence:`).
+3. Tests for behavioral contracts → implement → regenerate types if needed → narrow verify (`evidence` + `verificationResult`).
 4. Return worker-report JSON.
 
 ## Constraints

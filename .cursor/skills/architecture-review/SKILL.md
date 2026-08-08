@@ -4,6 +4,7 @@ description: >-
   Boundaries, module structure, cross-cutting design tradeoffs, and ADR options.
   Use from planner (plans) or reviewer/documenter (smells / ADR prose). Does not
   implement product features.
+x-owner: agent-kit
 ---
 
 # Architecture review

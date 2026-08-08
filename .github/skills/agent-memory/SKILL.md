@@ -6,6 +6,7 @@ description: >-
   a multi-step task, or needs prior choices (Mode, copy, schema, Writable paths).
   MCP telemetry goes to mcp-usage.md, not this log. Manager reads before dispatch;
   documenter appends when briefed.
+x-owner: agent-kit
 ---
 
 # Agent memory (decisions log)

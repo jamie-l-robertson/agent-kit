@@ -60,7 +60,7 @@ Paste from kit `AGENTS.md` section **## Agents & routing** (full table including
 Append under `## No owner` if missing (replace older “security has no specialist” wording):
 
 ```markdown
-Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns → `security`. PII/compliance → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
+Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns audit → `security` (fixes via manager → owning implementer; lockfile/CVE bumps → `backend`). PII/compliance audit → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
 ```
 
 ---

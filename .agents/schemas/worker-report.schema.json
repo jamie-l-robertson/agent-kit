@@ -11,14 +11,30 @@
     "goal",
     "changed",
     "recommendNext",
-    "humanApprove"
+    "humanApprove",
+    "verificationResult"
   ],
   "properties": {
     "status": {
       "type": "string",
       "enum": ["done", "needs-decision", "blocked", "out-of-scope"]
     },
-    "agent": { "type": "string", "minLength": 1 },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "manager",
+        "planner",
+        "frontend",
+        "backend",
+        "tester",
+        "documenter",
+        "reviewer",
+        "security",
+        "devops",
+        "infrastructure",
+        "risk"
+      ]
+    },
     "mode": {
       "type": "string",
       "enum": ["audit-only", "implement", "verify-only", "document"]
@@ -40,7 +56,13 @@
     "humanApprove": {
       "type": "string",
       "enum": ["required", "granted", "n/a"]
-    }
+    },
+    "verificationResult": {
+      "type": "string",
+      "enum": ["pass", "fail", "n/a"]
+    },
+    "approvedAction": { "type": ["string", "null"] },
+    "agentId": { "type": ["string", "null"] }
   },
   "allOf": [
     {
@@ -82,6 +104,59 @@
           "changed": { "type": "array", "maxItems": 0 }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": { "enum": ["security", "risk"] },
+          "status": { "const": "done" }
+        },
+        "required": ["agent", "status"]
+      },
+      "then": {
+        "properties": {
+          "mode": { "const": "audit-only" },
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "out-of-scope" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "recommendNext": { "type": "string", "minLength": 1, "not": { "const": "none" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "needs-decision" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["needs"],
+        "properties": {
+          "needs": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "mode": { "const": "implement" },
+          "verificationResult": { "const": "fail" }
+        },
+        "required": ["status", "mode", "verificationResult"]
+      },
+      "then": { "not": {} }
     }
   ]
 }

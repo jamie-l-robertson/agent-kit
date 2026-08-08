@@ -50,6 +50,7 @@ Every member of `WORKERS` in `.agents/hooks/gate-core.mjs` plus `manager` must a
 | 15 | PII in logs / retention | `risk` | `inherit` | risk |
 | 16 | Pure cloud-console DNS, no IaC/CLI | no-owner | n/a | no-owner |
 | 17 | Mixed: API email field + UI form | `planner` order | `inherit` | planner, backend, frontend, risk, tester, reviewer |
+| 20 | Vulnerable dep upgrade after security audit | `backend` (security audited) | `inherit` | backend, security |
 
 ## Result log template
 

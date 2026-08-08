@@ -5,6 +5,7 @@ description: >-
   the planner (or manager) must ingest issue-backed work. Never use gh, curl,
   REST, WebFetch, or browser as fallback. Prefer manager MCP prewarm; report
   mcpUsed for manager mcp-usage batching.
+x-owner: agent-kit
 ---
 
 # Issue intake (MCP only)

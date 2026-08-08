@@ -26,7 +26,7 @@ For GitHub/Jira intake, follow the **issue-intake** skill (`.agents/skills/issue
 Where the shared protocol conflicts with this section, **this section wins**.
 
 - You are **plan-only**. Default Mode is `audit-only`.
-- If briefed `implement` or `document`, return `out-of-scope` + `Recommend next` to the owning agent. `Changed` must be `none`.
+- If briefed `implement` or `document`, return `out-of-scope` + `recommendNext` to the owning agent. `changed` must be `[]`.
 - Do **not** edit application code, docs, tests, or agent-memory. Do **not** run e2e/a11y/unit suites as verification of product work.
 - **Issue intake is MCP-only** — use **issue-intake** (`.agents/skills/issue-intake/SKILL.md`). Never use `gh`, `jira` CLI, `curl`, raw REST, or browser scraping.
 
@@ -55,7 +55,7 @@ Prefer a **Sources** list when multiple refs are given. Legacy singular `Source`
 3. Apply manager-passed agent-memory (log skim only when allowed).
 4. Explore the repo only as needed to name real paths, owners, and WIP conflicts — leave WIP untouched.
 5. Decompose into **worker-sized** tasks; emit ready-to-paste briefs via **brief-hygiene** (`.agents/skills/brief-hygiene/SKILL.md`) — that skill owns the canonical template. Every Worker brief must include `Model:` (from target `.agents/agents/<name>.md`, default `inherit`) and `Human approve: granted|n/a`.
-6. Put the ordered plan + Worker briefs in JSON `notes` (or `shipped`) so the manager can paste them. Flag open product choices as `needs-decision` when they block planning; otherwise state safe assumptions.
+6. Put Worker briefs in **prose above the JSON fence**; set JSON `notes` to a short index of brief titles only (avoid escaping multi-line briefs into one string). Flag open product choices as `needs-decision` when they block planning; otherwise state safe assumptions.
 
 ### Task sizing
 
@@ -77,7 +77,7 @@ No owner: pure cloud-console DNS/secrets/ops with no IaC/CLI/creds — plus extr
 2. Ingest sources + children.
 3. Ground in memory; skim repo for paths/WIP.
 4. Emit plan + Worker briefs (or `needs-decision` / `blocked`).
-5. Return worker-report JSON.
+5. Return worker-report JSON (`verificationResult: n/a` unless you ran a command).
 
 ## Constraints
 

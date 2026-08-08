@@ -1,3 +1,5 @@
 # Agent kit — ignore hook runtime state
 .agents/hooks/state/
+.tmp-install-*/
+.tmp-skills-inv-*/
 .cursor/hooks/state/

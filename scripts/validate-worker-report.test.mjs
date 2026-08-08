@@ -15,6 +15,7 @@ const valid = {
   changed: ['src/Button.tsx'],
   recommendNext: 'none',
   humanApprove: 'n/a',
+  verificationResult: 'pass',
 }
 
 test('schema required keys match validator', () => {
@@ -35,6 +36,10 @@ test('validateWorkerReport rejects bad status', () => {
   assert.equal(validateWorkerReport({ ...valid, status: 'ok' }).ok, false)
 })
 
+test('validateWorkerReport rejects unknown agent', () => {
+  assert.equal(validateWorkerReport({ ...valid, agent: 'fronend' }).ok, false)
+})
+
 test('done + humanApprove required is invalid', () => {
   const r = validateWorkerReport({ ...valid, humanApprove: 'required' })
   assert.equal(r.ok, false)
@@ -47,6 +52,7 @@ test('reviewer audit-only done requires findings', () => {
     mode: 'audit-only',
     changed: [],
     findings: null,
+    verificationResult: 'n/a',
   })
   assert.equal(r.ok, false)
   assert.equal(
@@ -56,6 +62,7 @@ test('reviewer audit-only done requires findings', () => {
       mode: 'audit-only',
       changed: [],
       findings: 'none',
+      verificationResult: 'n/a',
     }).ok,
     true,
   )
@@ -67,15 +74,84 @@ test('planner done must have empty changed', () => {
     agent: 'planner',
     mode: 'audit-only',
     changed: ['x'],
+    verificationResult: 'n/a',
   })
   assert.equal(r.ok, false)
+})
+
+test('security done must be audit-only with empty changed', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'security',
+      mode: 'implement',
+      changed: ['x'],
+      findings: 'crit',
+      verificationResult: 'n/a',
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'security',
+      mode: 'audit-only',
+      changed: [],
+      findings: 'crit',
+      verificationResult: 'n/a',
+    }).ok,
+    true,
+  )
+})
+
+test('out-of-scope requires recommendNext', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      status: 'out-of-scope',
+      recommendNext: 'none',
+      verificationResult: 'n/a',
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      status: 'out-of-scope',
+      recommendNext: 'backend',
+      verificationResult: 'n/a',
+    }).ok,
+    true,
+  )
+})
+
+test('needs-decision requires needs', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      status: 'needs-decision',
+      needs: null,
+      verificationResult: 'n/a',
+    }).ok,
+    false,
+  )
+})
+
+test('implement done + verificationResult fail is invalid', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      verificationResult: 'fail',
+    }).ok,
+    false,
+  )
 })
 
 test('extractWorkerReportJson finds last matching fence', () => {
   const text = `
 Status: done
 \`\`\`json
-{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none","humanApprove":"n/a","findings":"none"}
+{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none","humanApprove":"n/a","findings":"none","verificationResult":"n/a"}
 \`\`\`
 `
   const report = extractWorkerReportJson(text)

@@ -4,6 +4,7 @@ description: >-
   Performance audit checklist for CWV, bundle size, caching, and query/N+1
   smells. Use for Lighthouse/bundle/query perf work. UI/CWV → frontend; server
   queries → backend. Prefer project commands via verify-evidence.
+x-owner: agent-kit
 ---
 
 # Perf audit
@@ -29,5 +30,5 @@ Prefer `AGENTS.md`. Load when the brief is perf-scoped.
 ## Findings shape
 
 ```text
-Findings: <severity> — <path> — <metric/issue> — <why> — <fix|deferred>
+Put severity list in JSON `findings`: <severity> — <path> — <metric/issue> — <why> — <fix|deferred>
 ```

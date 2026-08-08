@@ -5,8 +5,10 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+// fileURLToPath used for isMain
+import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SCHEMA_PATH = join(
@@ -20,7 +22,9 @@ const SCHEMA_PATH = join(
 const STATUS = new Set(['done', 'needs-decision', 'blocked', 'out-of-scope'])
 const MODE = new Set(['audit-only', 'implement', 'verify-only', 'document'])
 const HUMAN = new Set(['required', 'granted', 'n/a'])
+const VERIFY = new Set(['pass', 'fail', 'n/a'])
 const AUDIT_FINDINGS_AGENTS = new Set(['reviewer', 'security', 'risk'])
+const AUDIT_ONLY_AGENTS = new Set(['security', 'risk'])
 
 /** Schema required keys — kept in sync with worker-report.schema.json */
 export const SCHEMA_REQUIRED = [
@@ -31,6 +35,7 @@ export const SCHEMA_REQUIRED = [
   'changed',
   'recommendNext',
   'humanApprove',
+  'verificationResult',
 ]
 
 export function loadSchemaRequired() {
@@ -76,11 +81,12 @@ export function validateWorkerReport(report) {
   if (report.mode != null && !MODE.has(report.mode)) {
     errors.push(`invalid mode: ${report.mode}`)
   }
-  if (
-    report.agent != null &&
-    (typeof report.agent !== 'string' || !report.agent.trim())
-  ) {
-    errors.push('agent must be a non-empty string')
+  if (report.agent != null) {
+    if (typeof report.agent !== 'string' || !report.agent.trim()) {
+      errors.push('agent must be a non-empty string')
+    } else if (!PROJECT_AGENTS.has(report.agent)) {
+      errors.push(`invalid agent: ${report.agent}`)
+    }
   }
   if (
     report.goal != null &&
@@ -105,13 +111,17 @@ export function validateWorkerReport(report) {
   if (report.humanApprove != null && !HUMAN.has(report.humanApprove)) {
     errors.push(`invalid humanApprove: ${report.humanApprove}`)
   }
+  if (
+    report.verificationResult != null &&
+    !VERIFY.has(report.verificationResult)
+  ) {
+    errors.push(`invalid verificationResult: ${report.verificationResult}`)
+  }
 
-  // allOf: done + humanApprove required is invalid
   if (report.status === 'done' && report.humanApprove === 'required') {
     errors.push('status done cannot have humanApprove required (use needs-decision)')
   }
 
-  // audit agents need findings string on done + audit-only
   if (
     report.status === 'done' &&
     report.mode === 'audit-only' &&
@@ -122,7 +132,6 @@ export function validateWorkerReport(report) {
     }
   }
 
-  // planner done → empty changed
   if (
     report.status === 'done' &&
     report.agent === 'planner' &&
@@ -130,6 +139,38 @@ export function validateWorkerReport(report) {
     report.changed.length > 0
   ) {
     errors.push('planner done reports must have changed: []')
+  }
+
+  if (AUDIT_ONLY_AGENTS.has(report.agent) && report.status === 'done') {
+    if (report.mode !== 'audit-only') {
+      errors.push(`${report.agent} done reports must use mode: audit-only`)
+    }
+    if (Array.isArray(report.changed) && report.changed.length > 0) {
+      errors.push(`${report.agent} done reports must have changed: []`)
+    }
+  }
+
+  if (report.status === 'out-of-scope') {
+    const next = report.recommendNext
+    if (typeof next !== 'string' || !next.trim() || next === 'none') {
+      errors.push('out-of-scope requires recommendNext other than none')
+    }
+  }
+
+  if (report.status === 'needs-decision') {
+    if (typeof report.needs !== 'string' || !report.needs.trim()) {
+      errors.push('needs-decision requires non-empty needs')
+    }
+  }
+
+  if (
+    report.status === 'done' &&
+    report.mode === 'implement' &&
+    report.verificationResult === 'fail'
+  ) {
+    errors.push(
+      'implement done cannot have verificationResult fail (use needs-decision or fix)',
+    )
   }
 
   return { ok: errors.length === 0, errors }
@@ -140,12 +181,10 @@ async function main() {
   if (raw === '--stdin' || raw === '-') {
     const chunks = []
     for await (const c of process.stdin) chunks.push(c)
-    raw = Buffer.concat(chunks).toString('utf8')
+    raw = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8')
   }
   if (!raw) {
-    console.error(
-      "Usage: node scripts/validate-worker-report.mjs '<json>' | --stdin",
-    )
+    console.error('Usage: validate-worker-report.mjs \'<json>\' | --stdin')
     process.exit(2)
   }
   let report
@@ -154,7 +193,7 @@ async function main() {
   } catch {
     const extracted = extractWorkerReportJson(raw)
     if (!extracted) {
-      console.error('Invalid JSON and no worker-report fence found')
+      console.error('invalid JSON')
       process.exit(1)
     }
     report = extracted
@@ -167,6 +206,8 @@ async function main() {
   console.log('ok')
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const isMain =
+  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+if (isMain) {
   main()
 }

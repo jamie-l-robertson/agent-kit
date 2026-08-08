@@ -4,6 +4,7 @@ description: >-
   Diff/PR review checklist: run project lint/typecheck for Evidence, then
   judgment Findings against AGENTS.md standards refs. Use always from reviewer;
   optional implementer self-check. Readonly — never edit to silence tooling.
+x-owner: agent-kit
 ---
 
 # Code review
@@ -33,7 +34,7 @@ Adherence severity (design system): `strict` stated-rule breaks → Critical; `s
 ## Findings shape
 
 ```text
-- Critical: <path — issue — why — suggested fix — Recommend next: agent>
+- Critical: <path — issue — why — suggested fix — recommendNext: agent> (put severity list in JSON `findings`)
 - Warning: …
 - Nit: …
 ```

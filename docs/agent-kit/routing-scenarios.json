@@ -176,5 +176,15 @@
       "tester",
       "reviewer"
     ]
+  },
+  {
+    "id": 20,
+    "ask": "Upgrade a vulnerable npm transitive dependency after a security audit finding",
+    "primary": "backend",
+    "model": "inherit",
+    "expect": [
+      "backend",
+      "security"
+    ]
   }
 ]

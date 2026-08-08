@@ -4,6 +4,7 @@ description: >-
   WCAG audit and surgical a11y remediation checklist. Use when fixing axe/a11y
   failures, focus order/traps, names/labels, ARIA, contrast via existing tokens,
   or skip links. Default bar WCAG 2.2 AA unless the brief says otherwise.
+x-owner: agent-kit
 ---
 
 # A11y / WCAG
@@ -32,5 +33,5 @@ Prefer `AGENTS.md`. Owner is usually **`frontend`** (fixes) or **`tester`** (har
 ## Findings shape
 
 ```text
-Findings: <severity> — <path> — <WCAG id> — <issue> — <fix|deferred>
+Put severity list in JSON `findings`: <severity> — <path> — <WCAG id> — <issue> — <fix|deferred>
 ```

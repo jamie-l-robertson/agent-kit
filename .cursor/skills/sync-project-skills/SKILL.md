@@ -5,6 +5,7 @@ description: >-
   .claude/skills, and .github/skills. Updates AGENTS.md Skills line and
   .agents/memory/skills-inventory.md. Invoked by setup / after adding project
   skills when the Skills line looks stale.
+x-owner: agent-kit
 ---
 
 # Sync project skills inventory
