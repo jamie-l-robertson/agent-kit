@@ -23,10 +23,13 @@ export const WORKERS = new Set([
   'planner',
   'frontend',
   'backend',
-  'accessibility',
   'tester',
   'documenter',
   'reviewer',
+  'security',
+  'devops',
+  'infrastructure',
+  'risk',
 ])
 export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
 

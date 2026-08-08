@@ -1,0 +1,116 @@
+[
+  {
+    "id": 1,
+    "ask": "Multi-domain ship with unclear split",
+    "primary": "manager",
+    "expect": ["manager", "planner"]
+  },
+  {
+    "id": 18,
+    "ask": "PII in application logs (retention/redaction) — not an auth bug",
+    "primary": "risk",
+    "expect": ["risk"]
+  },
+  {
+    "id": 19,
+    "ask": "Fix failing GitHub Actions workflow secret *reference* wiring",
+    "primary": "devops",
+    "expect": ["devops"]
+  },
+  {
+    "id": 2,
+    "ask": "Issue-backed multi-step plan only",
+    "primary": "planner",
+    "expect": ["planner"]
+  },
+  {
+    "id": 3,
+    "ask": "Restyle a landing hero / UI component",
+    "primary": "frontend",
+    "expect": ["frontend"]
+  },
+  {
+    "id": 4,
+    "ask": "Add API route / schema with no personal data",
+    "primary": "backend",
+    "expect": ["backend"]
+  },
+  {
+    "id": 5,
+    "ask": "Fix axe/WCAG failure (focus trap / name)",
+    "primary": "frontend",
+    "expect": ["frontend"]
+  },
+  {
+    "id": 6,
+    "ask": "Add or fix unit/e2e test or flake harness",
+    "primary": "tester",
+    "expect": ["tester"]
+  },
+  {
+    "id": 7,
+    "ask": "Diff/PR quality review after changes",
+    "primary": "reviewer",
+    "expect": ["reviewer"]
+  },
+  {
+    "id": 8,
+    "ask": "Append agent-memory or write a handoff doc",
+    "primary": "documenter",
+    "expect": ["documenter"]
+  },
+  {
+    "id": 9,
+    "ask": "Session/cookie / secrets-in-code / CVE hygiene",
+    "primary": "security",
+    "expect": ["security"]
+  },
+  {
+    "id": 10,
+    "ask": "Module boundaries / ADR recommendation",
+    "primary": "planner",
+    "expect": ["planner", "documenter"]
+  },
+  {
+    "id": 11,
+    "ask": "Lighthouse / bundle / UI perf",
+    "primary": "frontend",
+    "expect": ["frontend"]
+  },
+  {
+    "id": 12,
+    "ask": "Query/N+1 / server perf",
+    "primary": "backend",
+    "expect": ["backend"]
+  },
+  {
+    "id": 13,
+    "ask": "Failing GitHub Action / workflow edit",
+    "primary": "devops",
+    "expect": ["devops"]
+  },
+  {
+    "id": 14,
+    "ask": "Terraform/DNS/secret-store automation",
+    "primary": "infrastructure",
+    "expect": ["infrastructure"]
+  },
+  {
+    "id": 15,
+    "ask": "PII in logs / retention / data classification",
+    "primary": "risk",
+    "expect": ["risk"]
+  },
+  {
+    "id": 16,
+    "ask": "Pure cloud-console DNS with no IaC/CLI",
+    "primary": "no-owner",
+    "expect": ["no-owner"]
+  },
+  {
+    "id": 17,
+    "ask": "Mixed: API email field + UI form",
+    "primary": "planner",
+    "expect": ["planner", "backend", "frontend", "risk", "tester", "reviewer"]
+  }
+]

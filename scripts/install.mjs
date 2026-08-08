@@ -65,6 +65,44 @@ Env:
 `)
 }
 
+function ensureInstallAuditHeader() {
+  const dest = join(TARGET, '.agents', 'memory', 'install-audit.md')
+  ensureDir(dirname(dest))
+  if (!existsSync(dest)) {
+    writeFileSync(
+      dest,
+      `# Install audit log
+
+Append-only. Records when install/rsync **kept** a project-owned file instead of writing the kit version.
+Use for support, bug tracking, and knowing which stack-card files are project-local.
+
+`,
+      'utf8',
+    )
+  }
+  return dest
+}
+
+function appendInstallKeep({ path, kit, force }) {
+  const dest = ensureInstallAuditHeader()
+  const ts = new Date().toISOString()
+  const entry = `
+## ${ts} — kept project file
+
+- **Path**: ${path}
+- **Action**: kept-project (kit version not written)
+- **Kit**: ${kit}
+- **Force**: ${force}
+- **Why**: destination already existed; pass --force / AGENT_KIT_FORCE=1 to replace
+- **Note**: Project is using its own version of this file — report kit bugs against kit sources; report project stack-card bugs against this path. Run the **setup** skill to merge missing kit-required sections (copy-paste append blocks).
+`
+  writeFileSync(dest, readFileSync(dest, 'utf8').replace(/\s*$/, '') + entry + '\n', 'utf8')
+}
+
+function ensureDir(p) {
+  mkdirSync(p, { recursive: true })
+}
+
 function mergeGitignore(kitGitignorePath) {
   if (!existsSync(kitGitignorePath)) return
   const kitLines = readFileSync(kitGitignorePath, 'utf8')
@@ -93,7 +131,7 @@ function copyDir(src, dest) {
   cpSync(src, dest, { recursive: true, force: true })
 }
 
-function installFrom(kitRoot, { force }) {
+function installFrom(kitRoot, { force, kitLabel }) {
   const required = ['.agents', '.cursor', '.claude', 'scripts/sync-tool-adapters.mjs']
   for (const rel of required) {
     if (!existsSync(join(kitRoot, rel))) {
@@ -101,9 +139,18 @@ function installFrom(kitRoot, { force }) {
     }
   }
 
+  const auditPath = join(TARGET, '.agents', 'memory', 'install-audit.md')
+  const priorAudit = existsSync(auditPath) ? readFileSync(auditPath, 'utf8') : null
+
   copyDir(join(kitRoot, '.agents'), join(TARGET, '.agents'))
   copyDir(join(kitRoot, '.cursor'), join(TARGET, '.cursor'))
   copyDir(join(kitRoot, '.claude'), join(TARGET, '.claude'))
+
+  // Preserve project install-audit across .agents overwrite
+  if (priorAudit) {
+    ensureDir(dirname(auditPath))
+    writeFileSync(auditPath, priorAudit, 'utf8')
+  }
 
   mkdirSync(join(TARGET, '.github'), { recursive: true })
   for (const sub of ['agents', 'skills', 'instructions']) {
@@ -124,12 +171,16 @@ function installFrom(kitRoot, { force }) {
     cpSync(join(kitRoot, 'scripts', 'install.sh'), join(TARGET, 'scripts', 'install.sh'))
   }
 
+  const label = kitLabel || kitRoot
   for (const file of ['AGENTS.md', 'CLAUDE.md']) {
     const dest = join(TARGET, file)
     const src = join(kitRoot, file)
     if (!existsSync(src)) continue
     if (existsSync(dest) && !force) {
-      console.log(`Kept existing ${file} (pass --force or AGENT_KIT_FORCE=1 to replace)`)
+      appendInstallKeep({ path: file, kit: label, force: false })
+      console.log(
+        `Kept existing ${file} (pass --force or AGENT_KIT_FORCE=1 to replace). Logged to .agents/memory/install-audit.md — run **setup** to merge kit-required sections.`,
+      )
     } else {
       cpSync(src, dest)
       console.log(`Wrote ${file}`)
@@ -196,17 +247,23 @@ function main() {
       }
     }
 
+    const kitLabel = from
+      ? `--from=${kitRoot}`
+      : `${process.env.AGENT_KIT_REPO || DEFAULT_REPO}@${process.env.AGENT_KIT_REF || DEFAULT_REF}`
     console.log(`Installing into ${TARGET}`)
-    installFrom(kitRoot, { force })
+    installFrom(kitRoot, { force, kitLabel })
     console.log(`
 Done.
 
 Next — configure the stack card:
   Ask your coding agent to run the **setup** skill
   (e.g. “run setup” or /setup).
+  If AGENTS.md / CLAUDE.md were kept, setup will offer copy-paste append blocks
+  for any missing kit-required sections (see .agents/memory/install-audit.md).
 
 Optional:
-  node scripts/sync-tool-adapters.mjs   # after you edit .agents/
+  node scripts/sync-tool-adapters.mjs          # after you edit .agents/
+  node scripts/sync-tool-adapters.mjs --check  # detect adapter drift
 `)
   } finally {
     if (cleanup) cleanup()

@@ -20,7 +20,7 @@ Prefer the command table in `AGENTS.md` for this project. Detect the package man
 Generic examples (replace with project scripts in `AGENTS.md`):
 
 | Intent | Example |
-|--------|---------|
+| -------- | --------- |
 | Narrow unit/int | `<pm> exec vitest run path/to/file.test.tsx` |
 | Integration suite | `<pm> test:int` (or project equivalent) |
 | E2E | `<pm> test:e2e` (or project equivalent) |

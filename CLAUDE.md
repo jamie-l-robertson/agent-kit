@@ -18,3 +18,4 @@ Read and apply these project rules (also mirrored under `.cursor/rules/` and `.g
 - Call-graph gate: `.claude/settings.json` → `.agents/hooks/adapters/claude.mjs` (workers cannot nest)
 
 After editing canonical sources under `.agents/`, run `node scripts/sync-tool-adapters.mjs`.
+Drift check: `node scripts/sync-tool-adapters.mjs --check`.

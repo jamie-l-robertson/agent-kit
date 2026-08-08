@@ -10,8 +10,43 @@ Quick reference for subagents. Prefer this over rediscovering the stack each run
 - **Database**: <!-- e.g. Postgres via DATABASE_URL -->
 - **Package manager**: <!-- e.g. pnpm (lockfile) | npm | yarn | bun -->
 - **UI**: <!-- e.g. SCSS modules | Tailwind | CSS modules -->
+- **Design system**: <!-- repo path or https URL — e.g. `.agents/rules/design-system.md` — or n/a -->
+- **Design system adherence**: <!-- strict | standard | loose — only when Design system is set; else n/a. Default if unset: standard -->
+- **Frontend standards**: <!-- repo path or https URL — e.g. `docs/standards/frontend.md` — or n/a -->
+- **Backend standards**: <!-- repo path or https URL — or n/a -->
+- **API standards**: <!-- repo path or https URL — or n/a -->
+- **Cloud platform**: <!-- aws | azure | gcp | multi | n/a -->
+- **Cloud standards**: <!-- repo path or https URL — e.g. `.agents/rules/cloud-standards.md` — or n/a -->
+- **DevOps standards**: <!-- repo path or https URL — e.g. `.agents/rules/devops-standards.md` — or n/a -->
+- **Infrastructure standards**: <!-- repo path or https URL — e.g. `.agents/rules/infrastructure-standards.md` — or n/a -->
+- **Security standards**: <!-- repo path or https URL — e.g. `.agents/rules/security-standards.md` — or n/a -->
+- **Risk standards**: <!-- repo path or https URL — e.g. `.agents/rules/risk-standards.md` — or n/a -->
+- **Standards MCP**: <!-- when any standards/design-system ref is a URL: MCP server id hint, e.g. notion | confluence | github — or n/a -->
+- **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
 - **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
-- **Rules**: also see `.agents/rules/` (TDD, Karpathy guidelines, Context7 API validation) — synced to Cursor / Claude / Copilot adapters
+- **Rules**: always-on under `.agents/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
+- **Skills**: `.agents/skills/setup`, `agent-memory`, `brief-hygiene`, `verify-evidence`, `issue-intake`, `a11y-wcag`, `perf-audit`, `architecture-review`, `code-review` (each has `SKILL.md`). Agent bodies compose `.agents/protocols/` at sync.
+
+### Resolving Design system / standards refs
+
+| Ref | How to load | Forbidden |
+|-----|-------------|-----------|
+| Repo path | Read from the workspace | — |
+| `http(s)://…` URL | **MCP only** — discover/auth the doc MCP (see **Standards MCP** / **Required MCP**), then fetch | `curl`, `gh`, raw REST, WebFetch, browser, install scripts |
+| `n/a` / empty / `<!-- … -->` | Skip | — |
+
+URL + no suitable MCP after one auth attempt → `blocked` (name the MCP). Prefer vendoring standards as local paths when possible.
+
+When **Design system** is a real ref, `frontend` loads it before UI work and `reviewer` checks UI diffs against it. **Design system adherence**:
+
+| Value | Meaning |
+|-------|---------|
+| `strict` | Do not invent outside the system. New tokens/patterns/components → `needs-decision` unless the brief explicitly names the exception. |
+| `standard` | Follow by default. Brief or settled decisions may override; note material deviations. |
+| `loose` | Guide only; siblings + brief may diverge; summarize intentional deviations. |
+| `n/a` | Use when **Design system** is `n/a`. |
+
+**Who loads standards when set:** Frontend standards → `frontend` (+ `reviewer` on FE diffs). Backend standards → `backend` (+ `reviewer` on server diffs). API standards → `backend` and `frontend` when touching contracts (+ `reviewer`). Cloud standards → `infrastructure` + `devops` when platform-touched (+ `reviewer`). DevOps standards → `devops` (+ `reviewer`). Infrastructure standards → `infrastructure` (+ `reviewer`). Security standards → `security` (+ `reviewer`). Risk standards → `risk` (+ `reviewer`).
 
 ## Path ownership
 
@@ -42,7 +77,7 @@ For Playwright e2e/a11y (when used): attempt the run first (`webServer` can star
 
 ## No owner (tell the user)
 
-`.github/workflows/**`, production DNS/secrets provisioning, ad-hoc infra, and perf/Lighthouse — do not implement without an explicit specialist or user direction.
+Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns → `security`. PII/compliance → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
 
 <!-- CUSTOMIZE: add project-specific no-owner zones here. -->
 
@@ -50,21 +85,28 @@ For Playwright e2e/a11y (when used): attempt the run first (`webServer` can star
 
 | Agent | Use for |
 |-------|---------|
-| `manager` | Orchestration, user Q&A, decision loop (readonly) |
-| `planner` | Plans for multi-step / multi-domain / issue-backed work; MCP-only GitHub/Jira (+ children); manager-passed agent-memory (readonly) |
-| `frontend` | UI components, layout, styling, motion |
-| `backend` | CMS/schema, server actions, API, server libs |
-| `accessibility` | WCAG audits/fixes, axe failures |
+| `manager` | Orchestration, user Q&A, decision loop (readonly); MCP prewarm |
+| `planner` | Plans for multi-step / multi-domain / issue-backed work; architecture-review skill; MCP-only GitHub/Jira (+ children); manager-passed agent-memory (readonly) |
+| `frontend` | UI, layout, styling, motion; a11y-wcag + perf-audit skills |
+| `backend` | CMS/schema, server actions, API, server libs; perf-audit for queries |
 | `tester` | Tests, coverage, harness (no production fixes) |
-| `reviewer` | Diff/code review (`audit-only`); does not implement |
+| `reviewer` | Diff/code review (`audit-only`) via code-review skill; does not implement |
 | `documenter` | Docs + agent-memory appends when briefed |
+| `security` | Threats, auth, secrets-in-code, CVE hygiene |
+| `devops` | CI workflows, in-repo deploy/Docker, pipeline env wiring |
+| `infrastructure` | DNS-as-code, Terraform/Pulumi/CDK, cloud secret stores/automation |
+| `risk` | PII, retention, data classification / compliance |
 
-`manager` · `planner` · `frontend` · `backend` · `accessibility` · `tester` · `reviewer` · `documenter` — canonical: `.agents/agents/` (synced to `.cursor/agents/`, `.claude/agents/`, `.github/agents/`).
+`manager` · `planner` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — canonical: `.agents/agents/` (synced to `.cursor/agents/`, `.claude/agents/`, `.github/agents/`).
 
 Call-graph gate: `.agents/hooks/` — hard deny of worker nesting on **Cursor** and **Claude Code**; **Copilot** is prompt policy only.
+
+Routing regression drills: [`docs/routing-scenarios.md`](docs/routing-scenarios.md) (JSON twin for CI).
 
 ## Memory
 
 - Log: `.agents/memory/decisions.md`
+- Install keep-audit: `.agents/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
 - Skill: `.agents/skills/agent-memory/SKILL.md`
 - **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the log
+- MCP calls that matter are logged via manager → documenter (server/tool/outcome only — no secrets or payloads)
