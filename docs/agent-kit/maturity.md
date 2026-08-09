@@ -37,11 +37,32 @@ Record here after a real capture (redact ids):
 | Run-event JSONL | **Done** — gate emit deny/allow; schema `.agents/schemas/run-event.schema.json`; dir `.agents/memory/runs/` (gitignored). Disable: `AGENT_KIT_RUN_EVENTS=0`. Optional POST: `AGENT_KIT_TELEMETRY_URL` |
 | Kit version in `check` | **Done** — `.agents/.kit-version` |
 | Honest host matrix | See README feature matrix |
+| Manager Final report + Token costs | **Done** — mandatory close template; optional worker-report `usage`; never invent $ |
 
-## Phase 2 — CI eval loop (deferred)
+## Phase 2 — Cloud agents
+
+Checklist: [`phase-2-cloud-agents.md`](phase-2-cloud-agents.md).
+
+| Item | Status |
+|------|--------|
+| Phase 2 doc + manager/code-review cloud notes | **Done** (doc + prompt wiring) |
+| README matrix Cloud agents row | **Partial** — stub until smoke |
+| Cloud gate hard vs soft | **Ops** — smoke nest-deny on cloud VM; update matrix |
+| Cloud MCP / secrets smoke | **Ops** |
+| End-to-end cloud smoke (planner → cloud implementer → close) | **Ops** — record below |
+
+### Cloud smoke log (operator)
+
+- Date:
+- Gate on cloud: hard / soft / unknown
+- MCP: ok / blocked (servers):
+- Usage in Final report: present / n/a (reason):
+- Merge-back: done / deferred
+
+## Phase 3 — CI eval loop (deferred)
 
 Deterministic `npm run eval`, adversarial cases, optional LLM routing — **not started**.
 
-## Phase 3 — Demo consumer (deferred)
+## Phase 4 — Demo consumer (deferred)
 
 Filled stack-card example app — **not started**.

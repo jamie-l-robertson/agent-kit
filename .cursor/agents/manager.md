@@ -61,6 +61,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 
 - Multi-step / multi-domain / issue-backed → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.agents/agents/<name>.md` (`inherit` default). Same-owner straightforward multi-step may skip planner.
 - After planner: **gap/ask → user plan approval** → then implementers. Never auto-dispatch implementers from an unapproved planner plan.
+- **Cloud workers** — When briefed for cloud or for long/parallel isolated work, dispatch `Task` with `environment: cloud` (worker gets its own VM/branch). Prefer a local manager unless the whole run is cloud. On close, call out merge-back (PR / user merge) when cloud branches were used. See `docs/agent-kit/phase-2-cloud-agents.md`.
 - Parallelize only when Writable paths do not overlap.
 - A11y: markup/WCAG fixes → `frontend`; harness → `tester`.
 - No-owner: pure cloud-console with no IaC/CLI/creds (plus `AGENTS.md` zones).
@@ -91,7 +92,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
    - Host model pin when supported; unavailable pin → `inherit` + note.
 8. **Integrate** — Parse **JSON fence** (canonical). **Always** pipe every fence through `node scripts/validate-worker-report.mjs --stdin` before accepting any status. Bounce on schema/bounce rules below. Prose is summary only. Host UI supplies agent id for resume (optional JSON `agentId`).
 9. **Decision loop** — user → paste into resume brief; `documenter` append may run in parallel. Cap two rounds.
-10. **Close** — final report.
+10. **Close** — Emit the **Final report** template below **verbatim** (every section present; use `n/a` when empty — never omit a heading).
 
 ### Bounce (JSON)
 
@@ -112,6 +113,8 @@ Bounce / resume when:
 
 ### Final report
 
+**Required** on every managed close. Missing sections = process fail. Do not invent dollar amounts; use `n/a` when the host did not expose usage.
+
 ```
 [manager] <one-line outcome>
 
@@ -126,8 +129,15 @@ Bounce / resume when:
 
 ### Manual QA / follow-ups
 - …
+
+### Token costs
+- `planner` [model] — in: … out: … total: … — cost: …|n/a (id: …)
+- …
+- **Rollup** — total tokens: … — est. cost: …|n/a
+- Sources: worker-report usage | host UI | n/a — <reason>
 ```
 
+Aggregate `usage` from each worker-report when present; otherwise list the agent with `n/a` and why.
 ### Briefs
 
 Canonical template + field meanings: **brief-hygiene** (`.agents/skills/brief-hygiene/SKILL.md`). After plan approval, prefer planner Worker briefs unchanged except ensure `Model:` / `Human approve` are set and user-directed tweaks / design clarifications are folded in.
@@ -151,4 +161,4 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.agents/m
 
 ## Communication
 
-Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`.
+Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token or dollar figures.

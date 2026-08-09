@@ -38,6 +38,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
 | Sync / install safety | Sync upserts kit agents/skills (`x-owner: agent-kit`); merges hooks. Install merges `.cursor/hooks.json` + `.claude/settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` | same | Upserts `.github/{agents,skills,instructions}` only — other `.github/` (e.g. workflows) preserved |
 | Health check | `node scripts/check-agent-kit.mjs` (adapters + Cursor/Claude gate smoke + Copilot markers + validator) | same | same |
+| Cloud agents (`environment: cloud`) | **Partial** — kit prompts + [phase-2-cloud-agents.md](docs/agent-kit/phase-2-cloud-agents.md); gate hard/soft TBD after smoke; commit kit trees for cloud clones | n/a (Cursor) | n/a |
 
 ## Install into a project
 

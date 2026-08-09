@@ -128,6 +128,7 @@ Rules:
 - `out-of-scope` ⇒ `recommendNext` non-empty and not `"none"`
 - `needs-decision` ⇒ non-empty `needs`
 - Manager **always** runs `node scripts/validate-worker-report.mjs --stdin` on every fence (kit script, not a project test suite)
+- Optional `usage` — best-effort token/cost object when the host exposes counts: `{ "inputTokens", "outputTokens", "totalTokens", "costUsd", "source" }` with `source`: `host` | `estimate` | `n/a`. Omit the whole object when unused, or set `"source": "n/a"`. Never invent dollar amounts. Manager rolls these into the Final report **Token costs** section.
 
 ### Design system + standards (when defined)
 

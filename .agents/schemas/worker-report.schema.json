@@ -62,7 +62,22 @@
       "enum": ["pass", "fail", "n/a"]
     },
     "approvedAction": { "type": ["string", "null"] },
-    "agentId": { "type": ["string", "null"] }
+    "agentId": { "type": ["string", "null"] },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": { "type": ["number", "null"] },
+        "outputTokens": { "type": ["number", "null"] },
+        "totalTokens": { "type": ["number", "null"] },
+        "costUsd": { "type": ["number", "null"] },
+        "source": {
+          "type": "string",
+          "enum": ["host", "estimate", "n/a"]
+        }
+      },
+      "required": ["source"]
+    }
   },
   "allOf": [
     {
