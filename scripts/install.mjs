@@ -32,7 +32,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   mergeCursorHooks,
   mergeClaudeSettings,
@@ -48,7 +48,6 @@ const MEMORY_PRESERVE = [
   'install-audit.md',
   'decisions.md',
   'mcp-usage.md',
-  'skills-inventory.md',
 ]
 
 const RULE_KEEP_NAMES = [
@@ -383,6 +382,34 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
   }
 
   mergeGitignore(target, join(kitRoot, '.gitignore'))
+
+  refreshSkillsInventory(target, kitRoot)
+}
+
+/**
+ * Regenerate skills-inventory + AGENTS.md Skills line for `target`.
+ * Runs the *kit*'s sync-project-skills with --root so stale consumer scripts
+ * cannot break refresh, and install.mjs stays loadable without .agents/.
+ */
+function refreshSkillsInventory(target, kitRoot) {
+  const agentsMd = join(target, 'AGENTS.md')
+  const script = join(kitRoot, 'scripts', 'sync-project-skills.mjs')
+  if (!existsSync(agentsMd) || !existsSync(script)) {
+    console.log('Skipped skills inventory refresh (missing AGENTS.md or kit sync script)')
+    return
+  }
+  const r = spawnSync(
+    process.execPath,
+    [script, `--root=${target}`],
+    { encoding: 'utf8' },
+  )
+  if (r.stdout?.trim()) console.log(r.stdout.trim())
+  if (r.status !== 0) {
+    if (r.stderr?.trim()) console.error(r.stderr.trim())
+    throw new Error(
+      `skills inventory refresh failed (exit ${r.status}). Run: node scripts/sync-project-skills.mjs`,
+    )
+  }
 }
 
 function downloadGithubKit(repo, ref) {

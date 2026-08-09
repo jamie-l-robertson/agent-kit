@@ -147,6 +147,7 @@ node scripts/sync-tool-adapters.mjs
 node scripts/check-agent-kit.mjs
 ```
 
+Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills line) automatically. If `check-agent-kit` still reports skills drift, run `node scripts/sync-project-skills.mjs` once; for adapter drift, run `node scripts/sync-tool-adapters.mjs`.
 5. **Cursor gate payload capture** (required before claiming unqualified hard): set `AGENT_KIT_GATE_LOG=1`, run a real nest attempt, record findings in [`docs/agent-kit/maturity.md`](docs/agent-kit/maturity.md). Normalized events append to `.agents/hooks/state/gate-log.jsonl` (or next to `AGENT_KIT_STATE_PATH`). Gate also appends structured deny/allow lines under `.agents/memory/runs/` (gitignored; `AGENT_KIT_RUN_EVENTS=0` to disable). Claude already uses stable `session_id`; Copilot has no hard gate.
 6. **Kit version**: `.agents/.kit-version` is printed by `check-agent-kit`. Cutting a release **tag** is a deliberate project action (ask before commit/tag); pin installs with `AGENT_KIT_REF=<tag>`.
 

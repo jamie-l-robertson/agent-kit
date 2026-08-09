@@ -15,13 +15,21 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseFrontmatter } from './sync-tool-adapters.mjs'
 import { KNOWN_KIT_SKILL_NAMES as KIT_SKILLS } from './kit-skill-names.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = join(__dirname, '..')
+const SCRIPT_ROOT = join(__dirname, '..')
+
+function resolveRoot(argv = process.argv) {
+  const rootArg = argv.find((a) => a.startsWith('--root='))
+  if (rootArg) return resolve(rootArg.slice('--root='.length))
+  return SCRIPT_ROOT
+}
+
+const ROOT = resolveRoot()
 
 const SKILL_ROOTS = [
   '.agents/skills',
@@ -181,28 +189,49 @@ export function buildOutputs(root = ROOT) {
   }
 }
 
-function writeInventory(content) {
-  mkdirSync(dirname(INVENTORY_PATH), { recursive: true })
-  writeFileSync(INVENTORY_PATH, content.endsWith('\n') ? content : `${content}\n`)
+/**
+ * Write skills-inventory.md and patch AGENTS.md Skills line for `root`.
+ * Used by CLI and by installInto so refresh does not depend on target's old scripts.
+ */
+export function applyProjectSkillsSync(root = ROOT) {
+  const agentsMdPath = join(root, 'AGENTS.md')
+  const inventoryPath = join(root, '.agents', 'memory', 'skills-inventory.md')
+  if (!existsSync(agentsMdPath)) {
+    throw new Error('AGENTS.md not found')
+  }
+  const { skills, inventory, skillsLine } = buildOutputs(root)
+  mkdirSync(dirname(inventoryPath), { recursive: true })
+  writeFileSync(
+    inventoryPath,
+    inventory.endsWith('\n') ? inventory : `${inventory}\n`,
+  )
+  const next = patchAgentsSkillsLine(read(agentsMdPath), skillsLine)
+  writeFileSync(agentsMdPath, next.endsWith('\n') ? next : `${next}\n`)
+  const kitCount = skills.filter((s) => s.owner === 'kit').length
+  const projectCount = skills.filter((s) => s.owner === 'project').length
+  return { kitCount, projectCount }
 }
 
 function main() {
   const check = process.argv.includes('--check')
-  const { skills, inventory, skillsLine } = buildOutputs(ROOT)
+  const root = resolveRoot()
+  const inventoryPath = join(root, '.agents', 'memory', 'skills-inventory.md')
+  const agentsMdPath = join(root, 'AGENTS.md')
+  const { skills, inventory, skillsLine } = buildOutputs(root)
   const kitCount = skills.filter((s) => s.owner === 'kit').length
   const projectCount = skills.filter((s) => s.owner === 'project').length
 
   if (check) {
     const mismatches = []
-    if (!existsSync(INVENTORY_PATH)) {
+    if (!existsSync(inventoryPath)) {
       mismatches.push('missing .agents/memory/skills-inventory.md')
-    } else if (read(INVENTORY_PATH) !== (inventory.endsWith('\n') ? inventory : `${inventory}\n`)) {
+    } else if (read(inventoryPath) !== (inventory.endsWith('\n') ? inventory : `${inventory}\n`)) {
       mismatches.push('drift .agents/memory/skills-inventory.md')
     }
-    if (!existsSync(AGENTS_MD)) {
+    if (!existsSync(agentsMdPath)) {
       mismatches.push('missing AGENTS.md')
     } else {
-      const md = read(AGENTS_MD)
+      const md = read(agentsMdPath)
       const line = md.split('\n').find((l) => l.startsWith('- **Skills**:'))
       if (!line) mismatches.push('AGENTS.md missing Skills line')
       else if (line !== skillsLine) mismatches.push('drift AGENTS.md Skills line')
@@ -218,14 +247,9 @@ function main() {
     return
   }
 
-  writeInventory(inventory)
-  if (!existsSync(AGENTS_MD)) {
-    throw new Error('AGENTS.md not found')
-  }
-  const next = patchAgentsSkillsLine(read(AGENTS_MD), skillsLine)
-  writeFileSync(AGENTS_MD, next.endsWith('\n') ? next : `${next}\n`)
+  const result = applyProjectSkillsSync(root)
   console.log(
-    `Synced project skills inventory (kit=${kitCount}, project=${projectCount}) → AGENTS.md + .agents/memory/skills-inventory.md`,
+    `Synced project skills inventory (kit=${result.kitCount}, project=${result.projectCount}) → AGENTS.md + .agents/memory/skills-inventory.md`,
   )
 }
 

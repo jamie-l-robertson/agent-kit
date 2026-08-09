@@ -275,11 +275,13 @@ function main() {
     run(join(__dirname, 'sync-tool-adapters.mjs'), ['--check'])
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
+    errors.push('  fix: node scripts/sync-tool-adapters.mjs')
   }
   try {
     run(join(__dirname, 'sync-project-skills.mjs'), ['--check'])
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
+    errors.push('  fix: node scripts/sync-project-skills.mjs')
   }
   try {
     smokeCursorGate()

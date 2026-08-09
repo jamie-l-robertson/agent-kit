@@ -162,7 +162,9 @@ test('install keep path logs AGENTS.md without overwrite', () => {
   try {
     writeFileSync(join(target, 'AGENTS.md'), '# project agents\n', 'utf8')
     installFrom(kitRoot, { force: false, kitLabel: 'test', target })
-    assert.equal(readFileSync(join(target, 'AGENTS.md'), 'utf8'), '# project agents\n')
+    const agents = readFileSync(join(target, 'AGENTS.md'), 'utf8')
+    assert.match(agents, /# project agents/, 'kept project body')
+    assert.match(agents, /^- \*\*Skills\*\*:/m, 'skills line patched on keep')
     const audit = readFileSync(
       join(target, '.agents', 'memory', 'install-audit.md'),
       'utf8',
@@ -250,5 +252,47 @@ test('install.mjs CLI entry runs when invoked via TMPDIR path', () => {
     )
   } finally {
     rmSync(staging, { recursive: true, force: true })
+  }
+})
+
+test('install refreshes stale skills-inventory.md (not preserved)', () => {
+  const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
+  try {
+    const mem = join(target, '.agents', 'memory')
+    mkdirSync(mem, { recursive: true })
+    writeFileSync(
+      join(mem, 'skills-inventory.md'),
+      '# stale inventory\n\nSTALE_MARKER_DO_NOT_KEEP\n',
+    )
+    writeFileSync(
+      join(target, 'AGENTS.md'),
+      '# Agent stack card\n\n## Stack\n\n- **Skills**: kit — none. Inventory: `.agents/memory/skills-inventory.md`.\n',
+    )
+
+    installFrom(kitRoot, {
+      force: true,
+      kitLabel: 'test',
+      target,
+    })
+
+    const inv = readFileSync(join(mem, 'skills-inventory.md'), 'utf8')
+    assert.ok(
+      !inv.includes('STALE_MARKER_DO_NOT_KEEP'),
+      'stale inventory must not be preserved',
+    )
+    assert.match(inv, /code-review/, 'inventory lists kit skills')
+
+    const check = spawnSync(
+      process.execPath,
+      [join(target, 'scripts', 'sync-project-skills.mjs'), '--check'],
+      { cwd: target, encoding: 'utf8' },
+    )
+    assert.equal(
+      check.status,
+      0,
+      check.stderr || check.stdout || 'skills --check failed',
+    )
+  } finally {
+    rmSync(target, { recursive: true, force: true })
   }
 })
