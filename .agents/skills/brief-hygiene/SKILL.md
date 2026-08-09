@@ -12,6 +12,8 @@ x-owner: agent-kit
 
 Fill every field that applies before dispatch. Prefer planner Worker briefs **unchanged** when available (manager may fill missing `Model:` / `Human approve`). Manager and planner **link here** — do not redefine fields elsewhere.
 
+After a **planner** run: do **not** dispatch implementers until planner-flagged gaps are resolved or explicitly accepted **and** the user has approved the plan (or said proceed). UI briefs must include Design system + adherence when the stack slot is set; if the planner flagged missing/misaligned design or unclear/mismatched design understanding vs plan, do not dispatch `frontend` implement until the user clarified.
+
 ## Canonical brief template
 
 ```
@@ -86,3 +88,5 @@ Brief hygiene:
 - Briefing `security` / `risk` with `Mode: implement`
 - Instructing URL fetch via curl, `gh`, WebFetch, or browser
 - Dispatching MCP-dependent work when Required MCP failed prewarm
+- Dispatching implementers from a planner plan before user gap answers / plan approval
+- Dispatching `frontend` implement while planner UI design gaps (missing, misaligned, or understanding unclear/mismatch) are still open

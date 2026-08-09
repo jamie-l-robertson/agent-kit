@@ -85,8 +85,8 @@ Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — d
 
 | Agent | Use for |
 |-------|---------|
-| `manager` | Orchestration, user Q&A, decision loop (readonly); MCP prewarm |
-| `planner` | Plans for multi-step / multi-domain / issue-backed work; architecture-review skill; MCP-only GitHub/Jira (+ children); manager-passed agent-memory (readonly) |
+| `manager` | Orchestration, user Q&A, planner gap relay + plan approval before implementers (readonly); MCP prewarm |
+| `planner` | Plans for multi-step / multi-domain / issue-backed work; gap scan + UI design exists/align/understanding check; architecture-review skill; MCP-only GitHub/Jira (+ children); manager-passed agent-memory (readonly); returns plan for manager→user approval |
 | `frontend` | UI, layout, styling, motion; a11y-wcag + perf-audit skills |
 | `backend` | CMS/schema, server actions, API, server libs; perf-audit for queries |
 | `tester` | Tests, coverage, harness (no production fixes) |
