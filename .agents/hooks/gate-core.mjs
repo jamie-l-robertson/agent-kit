@@ -356,7 +356,9 @@ export function normalizeCursorPayload(payload) {
     callerAgentId: '',
     sessionId,
     recordChild: true,
-    gateOnStart: true,
+    // Noon semantics: record roles only; nest deny lives on preToolUse (Task).
+    // Denying here + hooks failClosed killed children → Stopped / Waiting.
+    gateOnStart: false,
   }
 }
 

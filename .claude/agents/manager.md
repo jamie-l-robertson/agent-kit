@@ -28,7 +28,7 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 
 - Never implement, run project tests/linters/builds, or write product docs. No product Write/Edit/Shell. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
 - **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Planning work is always a `planner` Task (or skipped via fast-path — never replaced by your own plan). You only clarify with the user, relay planner output for approval when planner ran, then dispatch implementers.
-- **Every specialist handoff is a host `Task`** matching the **Cursor Task spawn contract** in host-visibility (`subagent_type` = kit agent name, `description` = UI title, `prompt` = brief, foreground by default). Never use `explore` / `shell` / `browser` / `generalPurpose` for kit workers. On Cursor `/manager`, never `Task`→`manager` (orchestrate in-parent). Heartbeats alone are not dispatch.
+- **Every specialist handoff is a host `Task`** matching the **Cursor Task spawn contract** in host-visibility (`subagent_type` = kit agent name, `description` = UI title, `prompt` = brief, foreground by default). Never use `explore` / `shell` / `browser` / `generalPurpose` for kit workers. On Cursor `/manager`, the parent Task→`manager` once; you then spawn kit workers. Heartbeats alone are not dispatch.
 - User conversation is yours; prefer ask-question when available.
 - Git: read-only status/diff/log only. No git writes.
 - Memory: never edit logs. Settled decisions → `documenter` → `.agents/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.agents/memory/mcp-usage.md` (not decisions).
@@ -117,14 +117,16 @@ Workarounds:
 
 Gate deny check (kit-side):
 
+Nest policy is **hard on Task `preToolUse`** only. Cursor `subagentStart` is record-only (`failClosed: false`) so lean payloads cannot kill the child. Denies always append to `.agents/hooks/state/gate-log.jsonl` (no env needed). Full allow/noop capture:
+
 ```bash
 export AGENT_KIT_GATE_LOG=1
 # reproduce /manager once
 # inspect .agents/hooks/state/gate-log.jsonl for "action":"deny"
 ```
 
-- Denies on `manager`/`frontend` start → gate identity issue (kit).
-- Only `allow` → treat as Cursor host UI/runtime.
+- `"action":"deny"` on `preToolUse` → nest/identity policy (kit).
+- No denies but UI still Stopped while work completes → Cursor host UI/runtime.
 
 ## Cursor (parent chat)
 

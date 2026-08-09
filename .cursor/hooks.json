@@ -9,7 +9,7 @@
     "subagentStart": [
       {
         "command": "node .agents/hooks/adapters/cursor.mjs",
-        "failClosed": true
+        "failClosed": false
       }
     ],
     "preToolUse": [

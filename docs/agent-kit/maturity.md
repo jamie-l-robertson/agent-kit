@@ -28,7 +28,7 @@ Record here after a real capture (redact ids):
 - `session_id` present? (yes/no)
 - `subagent_id` / `tool_call_id` present?
 - Nest deny observed? (yes/no)
-- Matrix claim after capture: keep “hard when lifecycle ids present” until yes/yes/yes
+- Matrix claim after capture: Cursor nest gate is hard on Task `preToolUse`; `subagentStart` is record-only
 
 ## Phase 1 — Instrument
 

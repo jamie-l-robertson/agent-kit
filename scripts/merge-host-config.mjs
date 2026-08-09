@@ -28,7 +28,7 @@ export function mergeCursorHooks(root, { failOnInvalidJson = true } = {}) {
   const kitHooks = {
     sessionStart: [{ command: CURSOR_GATE }],
     sessionEnd: [{ command: CURSOR_GATE }],
-    subagentStart: [{ command: CURSOR_GATE, failClosed: true }],
+    subagentStart: [{ command: CURSOR_GATE, failClosed: false }],
     subagentStop: [{ command: CURSOR_GATE }],
     preToolUse: [
       { command: CURSOR_GATE, matcher: 'Task', failClosed: true },

@@ -3,8 +3,8 @@
  * Cursor hook adapter for the call-graph gate.
  * Wire via .cursor/hooks.json → node .agents/hooks/adapters/cursor.mjs
  *
- * Set AGENT_KIT_GATE_LOG=1 to append normalized payloads + decisions under
- * .agents/hooks/state/gate-log.jsonl (or next to AGENT_KIT_STATE_PATH).
+ * Denies/throws are always appended to gate-log.jsonl next to agent-roles.json.
+ * Set AGENT_KIT_GATE_LOG=1 to also log allow/noop with normalized fields.
  */
 
 import { appendFileSync, mkdirSync } from 'node:fs'
@@ -30,30 +30,36 @@ function noop() {
   process.stdout.write('{}\n')
 }
 
-function maybeLog(payload, normalized, result) {
-  if (process.env.AGENT_KIT_GATE_LOG !== '1') return
+function gateLogPath() {
+  return join(dirname(getStatePath()), 'gate-log.jsonl')
+}
+
+function appendGateLog(entry) {
   try {
-    const logPath = join(dirname(getStatePath()), 'gate-log.jsonl')
+    const logPath = gateLogPath()
     mkdirSync(dirname(logPath), { recursive: true })
-    appendFileSync(
-      logPath,
-      `${JSON.stringify({
-        ts: new Date().toISOString(),
-        event: normalized.event,
-        sessionId: normalized.sessionId,
-        subagentId: normalized.subagentId,
-        toolCallId: normalized.toolCallId,
-        target: normalized.target,
-        parentConversationId: normalized.parentConversationId,
-        conversationId: normalized.conversationId,
-        action: result.action,
-        rawKeys: Object.keys(payload || {}),
-      })}\n`,
-      'utf8',
-    )
+    appendFileSync(logPath, `${JSON.stringify(entry)}\n`, 'utf8')
   } catch {
     /* ignore log failures */
   }
+}
+
+function maybeLog(payload, normalized, result) {
+  const isDeny = result.action === 'deny'
+  if (!isDeny && process.env.AGENT_KIT_GATE_LOG !== '1') return
+  appendGateLog({
+    ts: new Date().toISOString(),
+    event: normalized.event,
+    sessionId: normalized.sessionId,
+    subagentId: normalized.subagentId,
+    toolCallId: normalized.toolCallId,
+    target: normalized.target,
+    parentConversationId: normalized.parentConversationId,
+    conversationId: normalized.conversationId,
+    action: result.action,
+    message: isDeny ? result.message || null : undefined,
+    rawKeys: Object.keys(payload || {}),
+  })
 }
 
 const raw = await readStdin()
@@ -61,6 +67,12 @@ let payload = {}
 try {
   payload = raw.trim() ? JSON.parse(raw) : {}
 } catch {
+  appendGateLog({
+    ts: new Date().toISOString(),
+    event: 'parse',
+    action: 'deny',
+    message: 'gate-subagents: invalid JSON on stdin',
+  })
   deny('gate-subagents: invalid JSON on stdin')
   process.exit(0)
 }
@@ -76,13 +88,18 @@ try {
   }
   if (result.action === 'deny') {
     deny(result.message, {
-      includeAgentMessage:
-        normalized.event === 'preToolUse' ||
-        normalized.event === 'subagentStart',
+      includeAgentMessage: normalized.event === 'preToolUse',
     })
     process.exit(0)
   }
   allow()
 } catch (err) {
-  deny(`gate-subagents: ${err instanceof Error ? err.message : String(err)}`)
+  const message = `gate-subagents: ${err instanceof Error ? err.message : String(err)}`
+  appendGateLog({
+    ts: new Date().toISOString(),
+    event: 'error',
+    action: 'deny',
+    message,
+  })
+  deny(message)
 }

@@ -246,7 +246,8 @@ test('main-agent spawn with session root conversation still allows', () => {
       subagent_type: 'manager',
     }),
   )
-  assert.equal(allow.action, 'allow')
+  assert.equal(allow.action, 'noop')
+  assert.equal(rolesOf(sid)['mgr-1'], MANAGER)
 })
 
 test('SubagentStop clears role', () => {
@@ -351,8 +352,8 @@ test('two sessions stay isolated for nest deny', () => {
       subagent_type: 'frontend',
     }),
   )
-  // Session B still allows root→manager
-  const allowB = decide(
+  // Session B still records root→manager on start (noop)
+  const startB = decide(
     normalizeCursorPayload({
       hook_event_name: 'subagentStart',
       session_id: 'B',
@@ -362,16 +363,17 @@ test('two sessions stay isolated for nest deny', () => {
       subagent_type: 'manager',
     }),
   )
-  assert.equal(allowB.action, 'allow')
-  // Session A worker cannot nest
+  assert.equal(startB.action, 'noop')
+  assert.equal(rolesOf('B')['mgr-b'], MANAGER)
+  // Session A worker cannot nest on preToolUse
   const denyA = decide(
     normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
+      hook_event_name: 'preToolUse',
       session_id: 'A',
-      conversation_id: 'be-a',
+      conversation_id: 'fe-a',
       parent_conversation_id: 'fe-a',
-      subagent_id: 'be-a',
-      subagent_type: 'backend',
+      tool_call_id: 'be-a',
+      tool_input: { subagent_type: 'backend' },
     }),
   )
   assert.equal(denyA.action, 'deny')
@@ -445,7 +447,8 @@ test('Cursor fixture: root → manager → worker → deny nest; stop clears; co
   )
   assert.equal(denyNest.action, 'deny')
 
-  const denyStart = decide(
+  // Cursor subagentStart is record-only (gateOnStart false); nest deny is preToolUse.
+  const startNest = decide(
     normalizeCursorPayload({
       hook_event_name: 'subagentStart',
       session_id: sid,
@@ -455,7 +458,7 @@ test('Cursor fixture: root → manager → worker → deny nest; stop clears; co
       subagent_type: 'backend',
     }),
   )
-  assert.equal(denyStart.action, 'deny')
+  assert.equal(startNest.action, 'noop')
 
   decide(
     normalizeCursorPayload({
@@ -608,8 +611,8 @@ test('resolveSessionId finds session via parent when session_id omitted', () => 
       subagent_type: 'manager',
     }),
   )
-  // No session_id — resolve via parent mgr-1
-  const allow = decide(
+  // No session_id — resolve via parent mgr-1; start is record-only noop
+  const start = decide(
     normalizeCursorPayload({
       hook_event_name: 'subagentStart',
       conversation_id: 'fe-conv',
@@ -618,7 +621,7 @@ test('resolveSessionId finds session via parent when session_id omitted', () => 
       subagent_type: 'frontend',
     }),
   )
-  assert.equal(allow.action, 'allow')
+  assert.equal(start.action, 'noop')
   assert.equal(rolesOf('S1')['fe-1'], 'frontend')
   assert.equal(loadState().sessions[FALLBACK_SESSION], undefined)
 })
@@ -820,4 +823,90 @@ test('spawn with no session identity fails closed to _default', () => {
     gateOnStart: true,
   })
   assert.equal(d.action, 'deny')
+})
+
+test('Cursor lean subagentStart is noop (gateOnStart false); does not deny', () => {
+  const lean = normalizeCursorPayload({
+    hook_event_name: 'subagentStart',
+    subagent_id: 'mgr-1',
+    subagent_type: 'manager',
+  })
+  assert.equal(lean.gateOnStart, false)
+  const d = decide(lean)
+  assert.equal(d.action, 'noop')
+})
+
+test('Cursor lean preToolUse still fail-closed without identity', () => {
+  const d = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      tool_call_id: 'tc-lean',
+      tool_input: { subagent_type: 'manager' },
+    }),
+  )
+  assert.equal(d.action, 'deny')
+  assert.match(d.message, /no session\/conversation identity/i)
+})
+
+test('Cursor root→manager and manager→worker allow on preToolUse; worker nest denies', () => {
+  const sid = 'reg-root'
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'sessionStart',
+      session_id: sid,
+      conversation_id: sid,
+    }),
+  )
+  const mgr = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      session_id: sid,
+      conversation_id: sid,
+      tool_call_id: 'mgr-tc',
+      tool_input: { subagent_type: 'manager' },
+    }),
+  )
+  assert.equal(mgr.action, 'allow')
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: sid,
+      conversation_id: 'mgr-c',
+      parent_conversation_id: sid,
+      subagent_id: 'mgr-tc',
+      subagent_type: 'manager',
+    }),
+  )
+  const fe = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      session_id: sid,
+      conversation_id: 'mgr-c',
+      parent_conversation_id: 'mgr-tc',
+      tool_call_id: 'fe-tc',
+      tool_input: { subagent_type: 'frontend' },
+    }),
+  )
+  assert.equal(fe.action, 'allow')
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: sid,
+      conversation_id: 'fe-c',
+      parent_conversation_id: 'mgr-c',
+      subagent_id: 'fe-tc',
+      subagent_type: 'frontend',
+    }),
+  )
+  const nest = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      session_id: sid,
+      conversation_id: 'fe-c',
+      parent_conversation_id: 'fe-tc',
+      tool_call_id: 'be-tc',
+      tool_input: { subagent_type: 'backend' },
+    }),
+  )
+  assert.equal(nest.action, 'deny')
 })

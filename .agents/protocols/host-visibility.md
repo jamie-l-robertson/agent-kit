@@ -58,14 +58,16 @@ Workarounds:
 
 Gate deny check (kit-side):
 
+Nest policy is **hard on Task `preToolUse`** only. Cursor `subagentStart` is record-only (`failClosed: false`) so lean payloads cannot kill the child. Denies always append to `.agents/hooks/state/gate-log.jsonl` (no env needed). Full allow/noop capture:
+
 ```bash
 export AGENT_KIT_GATE_LOG=1
 # reproduce /manager once
 # inspect .agents/hooks/state/gate-log.jsonl for "action":"deny"
 ```
 
-- Denies on `manager`/`frontend` start → gate identity issue (kit).
-- Only `allow` → treat as Cursor host UI/runtime.
+- `"action":"deny"` on `preToolUse` → nest/identity policy (kit).
+- No denies but UI still Stopped while work completes → Cursor host UI/runtime.
 
 ## Cursor (parent chat)
 

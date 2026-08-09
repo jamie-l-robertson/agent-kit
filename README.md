@@ -34,7 +34,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Skills | `.cursor/skills/` (generated) | `.claude/skills/` | `.github/skills/` |
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
-| Call-graph gate (no worker nesting) | **hard when lifecycle ids present; verify with `AGENT_KIT_GATE_LOG=1`** (hooks; session-scoped + mkdir lock fail-closed; `subagentStart` + `preToolUse`; unmapped caller → deny; see `docs/agent-kit/maturity.md`) | **hard** (hooks; `SessionStart`/`SessionEnd`; same session-scoped state + fail-closed lock) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit` — same worker-report rules) |
+| Call-graph gate (no worker nesting) | **hard on Task `preToolUse`**; `subagentStart` record-only (`failClosed: false`); denies → `gate-log.jsonl`; optional `AGENT_KIT_GATE_LOG=1` (see `docs/agent-kit/maturity.md`) | **hard** (hooks; `SessionStart`/`SessionEnd`; same session-scoped state + fail-closed lock) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit` — same worker-report rules) |
 | Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
 | Sync / install safety | Sync upserts kit agents/skills (`x-owner: agent-kit`); merges hooks. Install merges `.cursor/hooks.json` + `.claude/settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` | same | Upserts `.github/{agents,skills,instructions}` only — other `.github/` (e.g. workflows) preserved |
 | Health check | `node scripts/check-agent-kit.mjs` (adapters + Cursor/Claude gate smoke + Copilot markers + validator) | same | same |
@@ -162,7 +162,7 @@ Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills
 
 - **Cursor `/manager`:** Parent immediately `Task`→`manager` (short `description`, **omit Task `model`**, foreground). Parent does not spawn `frontend`/`planner`. No `[manager] Got it…` / `Dispatching…` chatter. Skill + rule `manager-slash-cursor`.
 - **Cursor Task contract:** Named kit `subagent_type` + short `description` = labeled panel; avoid `explore` / `generalPurpose` / background for kit workers; never pass Task `model: inherit`.
-- **Stopped + Waiting for subagent:** Often a Cursor UI/runtime bug (child may still run). Wait / open the card; don’t re-prompt; Reload Window if stuck; Copy Request ID for Cursor. Gate check: `AGENT_KIT_GATE_LOG=1` then inspect `.agents/hooks/state/gate-log.jsonl` for `"action":"deny"`.
+- **Stopped + Waiting for subagent:** Can be Cursor UI (child still running) **or** a kit Task `preToolUse` deny. Denies always land in `.agents/hooks/state/gate-log.jsonl`; use `AGENT_KIT_GATE_LOG=1` for full capture. Cursor `subagentStart` is record-only (does not kill children). Wait / open the card; don’t re-prompt; Reload Window if stuck; Copy Request ID for Cursor.
 - **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; Task→manager nesting is normal. Desktop **Chat** / **Cowork** are out of kit scope.
 - See `.agents/protocols/host-visibility.md` (composed into manager).
 

@@ -54,9 +54,9 @@ flowchart TD
 3. **Cursor payload honesty** — stop inventing fields the host doesn’t send:
    - Do not stamp child role onto parent `conversation_id` at Cursor `subagentStart`.
    - Prefer `tool_call_id` / transcript correlation for stop clear when `subagent_id` absent (per Opus).
-   - Enable deny on Cursor `subagentStart` (it can deny); keep `preToolUse` as defense in depth.
-   - Add `AGENT_KIT_GATE_LOG=1` on Cursor adapter to append normalized payloads for capture.
-   - Until real capture exists: README feature matrix — Cursor nest gate **“hard when lifecycle ids present; verify with gate log”** (not unqualified hard).
+   - Cursor `subagentStart` is **record-only** (`gateOnStart: false`); nest deny is hard on Task `preToolUse` (`failClosed: true`). Do not deny on start — lean Cursor payloads + failClosed killed children (Stopped / Waiting).
+   - Deny/throw lines always append to `gate-log.jsonl`; set `AGENT_KIT_GATE_LOG=1` for full allow/noop capture.
+   - Until real capture exists: README feature matrix — Cursor nest gate **“hard on preToolUse; record-only on subagentStart”** (not unqualified hard).
 4. **Claude** — register `SessionStart` in `scripts/merge-host-config.mjs`; SessionEnd already session-wipe after (1).
 5. Tests: two-session isolation; check does not touch default `STATE_PATH`; Cursor start deny path.
 
