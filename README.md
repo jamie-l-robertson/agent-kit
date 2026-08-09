@@ -160,7 +160,7 @@ Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills
 
 ### Host UX (visibility)
 
-- **Cursor:** Subagent Task output often does not stream into the parent chat. Manager must emit `[manager]` heartbeats **before** every Task and set UI title `<agent> [<model>]: <short task>`.
+- **Cursor:** Named `Task(subagent_type=planner|frontend|…)` creates a labeled, openable panel; heartbeats alone do not. Avoid `explore` / `generalPurpose` / background Tasks for kit workers — that is why visibility regresses to anonymous “waiting on subagent”. Manager must emit `[manager]` lines **immediately before** each Task and set `description` to `<agent> [<model>]: <short task>`.
 - **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; use the same spawn titles. Desktop **Chat** / **Cowork** are out of kit scope.
 - See `.agents/protocols/host-visibility.md` (composed into manager).
 
