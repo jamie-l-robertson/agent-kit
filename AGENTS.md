@@ -25,7 +25,7 @@ Quick reference for subagents. Prefer this over rediscovering the stack each run
 - **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
 - **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
 - **Rules**: always-on under `.agents/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
-- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `code-review`, `issue-intake`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — none. Inventory: `.agents/memory/skills-inventory.md`. Agent bodies compose `.agents/protocols/` at sync.
+- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — none. Inventory: `.agents/memory/skills-inventory.md`. Agent bodies compose `.agents/protocols/` at sync.
 
 ### Resolving Design system / standards refs
 

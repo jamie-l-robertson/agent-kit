@@ -10,4 +10,5 @@ export const KNOWN_KIT_SKILL_NAMES = new Set([
   'architecture-review',
   'code-review',
   'sync-project-skills',
+  'manager',
 ])

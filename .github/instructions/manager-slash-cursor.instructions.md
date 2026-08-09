@@ -1,0 +1,14 @@
+---
+applyTo: **
+---
+# Cursor /manager dispatch
+
+When the user message starts with `/manager` or the **manager** skill was explicitly invoked:
+
+1. **You** run the manager workflow in this chat. Emit `[manager]` heartbeats.
+2. **Never** call `Task` with `subagent_type: manager` — nesting hides planner/frontend panels (parent shows only “Waiting for subagent”; manager row shows Stopped).
+3. **Never** explore/read agent files/implement before the first kit `Task`.
+4. Spawn specialists with kit `subagent_type` only (`planner`, `frontend`, …), `description` = `<agent> [<model>]: <short task>`, foreground by default. Forbid `explore` / `generalPurpose` / `shell` / `browser` for kit work.
+5. Follow manager routing (fast-path vs planner → approval → implementers) from the manager agent doc / host-visibility protocol.
+
+Outside `/manager`, the `manager` agent file remains valid when Claude or an explicit Task→manager is used.

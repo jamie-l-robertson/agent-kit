@@ -160,8 +160,9 @@ Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills
 
 ### Host UX (visibility)
 
-- **Cursor:** Named `Task(subagent_type=planner|frontend|…)` creates a labeled, openable panel; heartbeats alone do not. Avoid `explore` / `generalPurpose` / background Tasks for kit workers — that is why visibility regresses to anonymous “waiting on subagent”. Manager must emit `[manager]` lines **immediately before** each Task and set `description` to `<agent> [<model>]: <short task>`.
-- **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; use the same spawn titles. Desktop **Chat** / **Cowork** are out of kit scope.
+- **Cursor `/manager`:** Orchestrate **in the parent chat** and spawn depth-1 kit `Task(subagent_type=planner|frontend|…)`. Do **not** `Task`→`manager` — nesting shows manager **Stopped** and anonymous “Waiting for subagent” with no openable workers (see screenshot failure mode). Use the **manager** skill + rule `manager-slash-cursor`.
+- **Cursor Task contract:** Named kit `subagent_type` + `description` = labeled panel; avoid `explore` / `generalPurpose` / background for kit workers. Heartbeats alone do not create panels.
+- **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; Task→manager nesting is OK when the host shows children. Desktop **Chat** / **Cowork** are out of kit scope.
 - See `.agents/protocols/host-visibility.md` (composed into manager).
 
 ## Customize checklist

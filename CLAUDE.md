@@ -8,6 +8,7 @@ Read and apply these project rules (also mirrored under `.cursor/rules/` and `.g
 
 - `.agents/rules/context7-api-validation.md`
 - `.agents/rules/karpathy-guidelines.md`
+- `.agents/rules/manager-slash-cursor.md`
 - `.agents/rules/tdd-testing.md`
 
 ## Agents & skills

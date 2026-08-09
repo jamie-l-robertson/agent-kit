@@ -28,7 +28,7 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 
 - Never implement, run project tests/linters/builds, or write product docs. No product Write/Edit/Shell. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
 - **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Planning work is always a `planner` Task (or skipped via fast-path — never replaced by your own plan). You only clarify with the user, relay planner output for approval when planner ran, then dispatch implementers.
-- **Every specialist handoff is a host `Task`** matching the **Cursor Task spawn contract** in host-visibility (`subagent_type` = kit agent name, `description` = UI title, `prompt` = brief, foreground by default). Never use `explore` / `shell` / `browser` / `generalPurpose` for kit workers. Heartbeats alone are not dispatch.
+- **Every specialist handoff is a host `Task`** matching the **Cursor Task spawn contract** in host-visibility (`subagent_type` = kit agent name, `description` = UI title, `prompt` = brief, foreground by default). Never use `explore` / `shell` / `browser` / `generalPurpose` for kit workers. On Cursor `/manager`, never `Task`→`manager` (orchestrate in-parent). Heartbeats alone are not dispatch.
 - User conversation is yours; prefer ask-question when available.
 - Git: read-only status/diff/log only. No git writes.
 - Memory: never edit logs. Settled decisions → `documenter` → `.agents/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.agents/memory/mcp-usage.md` (not decisions).
@@ -93,6 +93,17 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 - One mega-Task that does the whole feature under a generic type
 - Announcing `[manager] Dispatching…` without a `Task` tool call in the **same** turn
 - Using built-in explorers to stand in for `planner` / `frontend` / etc.
+- On Cursor `/manager`: calling `Task(subagent_type="manager")` (nests workers; UI shows manager **Stopped** + anonymous “Waiting for subagent”)
+
+### Cursor `/manager` slash (visibility)
+
+Cursor often does **not** show nested Tasks under a manager subagent. When the user invokes **`/manager`**:
+
+1. **Orchestrate in this chat** (parent Agent) using the manager workflow — do **not** `Task` → `manager`.
+2. Spawn `planner` / `frontend` / … as **depth-1** Tasks so each is a labeled, openable panel.
+3. Follow the **manager** skill (`.agents/skills/manager/SKILL.md`) and always-on rule `manager-slash-cursor`.
+
+The `manager` **agent** file remains for Claude Code / Desktop Code / explicit Task→manager when nesting is acceptable.
 
 ## Cursor (parent chat)
 
@@ -105,6 +116,7 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 - Same title/description discipline; spawn the named project agent (`.claude/agents/`), not a generic helper.
 - Prefer fast-path when eligible to cut orchestration latency.
 - Prefer foreground / blocking spawns so users can open the worker.
+- Task→`manager` then manager→workers is OK when the host shows nested agents.
 
 ## Claude Desktop
 
@@ -225,8 +237,8 @@ Concise. Do not claim tests passed unless worker JSON `evidence` quotes real out
 
 See **host-visibility** (included above). Summary:
 
-1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…` or `[manager] Got it — fast-path frontend for hero typo…`
-2. **Immediately before every** `Task` tool call (same turn): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…` — then call `Task` with kit `subagent_type` (not explore/generalPurpose).
+1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…` or `[manager] Got it — fast-path frontend for hero typo…`. **Never** say “dispatching manager” (you are already the orchestrator; on Cursor `/manager` do not Task→manager).
+2. **Immediately before every** `Task` tool call (same turn): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…` — then call `Task` with kit `subagent_type` (not explore/generalPurpose/manager on Cursor slash).
 3. **Immediately after** each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step — e.g. `[manager] Planner done — presenting plan for approval` or `[manager] Frontend done — dispatching reviewer…`
 4. Optional one-liner for slow MCP prewarm or `validate-worker-report`.
 5. Do **not** dump full Worker briefs or the user’s long Behaviour block as progress. Do not announce dispatch without the `Task` call — the announce + `Task` **are** the heartbeat.

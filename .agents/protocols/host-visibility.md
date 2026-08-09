@@ -34,6 +34,17 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 - One mega-Task that does the whole feature under a generic type
 - Announcing `[manager] Dispatching…` without a `Task` tool call in the **same** turn
 - Using built-in explorers to stand in for `planner` / `frontend` / etc.
+- On Cursor `/manager`: calling `Task(subagent_type="manager")` (nests workers; UI shows manager **Stopped** + anonymous “Waiting for subagent”)
+
+### Cursor `/manager` slash (visibility)
+
+Cursor often does **not** show nested Tasks under a manager subagent. When the user invokes **`/manager`**:
+
+1. **Orchestrate in this chat** (parent Agent) using the manager workflow — do **not** `Task` → `manager`.
+2. Spawn `planner` / `frontend` / … as **depth-1** Tasks so each is a labeled, openable panel.
+3. Follow the **manager** skill (`.agents/skills/manager/SKILL.md`) and always-on rule `manager-slash-cursor`.
+
+The `manager` **agent** file remains for Claude Code / Desktop Code / explicit Task→manager when nesting is acceptable.
 
 ## Cursor (parent chat)
 
@@ -46,6 +57,7 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 - Same title/description discipline; spawn the named project agent (`.claude/agents/`), not a generic helper.
 - Prefer fast-path when eligible to cut orchestration latency.
 - Prefer foreground / blocking spawns so users can open the worker.
+- Task→`manager` then manager→workers is OK when the host shows nested agents.
 
 ## Claude Desktop
 
