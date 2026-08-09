@@ -82,7 +82,7 @@ Audit-only example:
 }
 ```
 
-Implement example (must include pass + evidence):
+Implement example (must include pass + evidence + non-empty `changed`):
 
 ```json
 {
@@ -103,8 +103,8 @@ Rules:
 - `status`: `done` | `needs-decision` | `blocked` | `out-of-scope`
 - `verificationResult`: `pass` | `fail` | `n/a` (required)
 - `pass` or `fail` ⇒ non-empty `evidence`
-- `mode: implement` + `status: done` ⇒ `verificationResult` must be `pass` and `evidence` non-empty (`n/a` and `fail` are invalid — fix or use `needs-decision`)
-- `changed`: string paths, or `[]` when none
+- `mode: implement` + `status: done` ⇒ `verificationResult` must be `pass`, `evidence` non-empty, and `changed` non-empty (`n/a` and `fail` are invalid — fix or use `needs-decision`)
+- `changed`: string paths, or `[]` when none (implement done forbids `[]`)
 - `humanApprove`: `required` | `granted` | `n/a`
 - `humanApprove: granted` ⇒ non-empty `approvedAction` (use `"n/a"` when not destructive-scoped)
 - `status: done` with `humanApprove: required` is invalid (use `needs-decision`)

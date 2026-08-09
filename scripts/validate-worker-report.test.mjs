@@ -251,6 +251,13 @@ test('implement done requires pass + evidence (1A)', () => {
     }).ok,
     false,
   )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      changed: [],
+    }).ok,
+    false,
+  )
   assert.equal(validateWorkerReport(valid).ok, true)
 })
 

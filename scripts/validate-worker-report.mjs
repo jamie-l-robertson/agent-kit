@@ -222,6 +222,9 @@ export function validateWorkerReport(report) {
     if (typeof report.evidence !== 'string' || !report.evidence.trim()) {
       errors.push('implement done requires non-empty evidence')
     }
+    if (!Array.isArray(report.changed) || report.changed.length < 1) {
+      errors.push('implement done requires non-empty changed')
+    }
   }
 
   // verify-only / document must not smuggle product edits via changed[]

@@ -23,5 +23,7 @@
 | 17 | planner, backend, frontend, risk, tester, reviewer | inherit | planner order: backend + frontend + risk → tester → reviewer | pass | security only if auth (not required here) |
 | 18 | risk | inherit | risk | pass | not security |
 | 19 | devops | inherit | devops | pass | not infrastructure |
+| 20 | backend, security | inherit | backend after security audit | pass | CVE remediations → backend |
+| 21 | manager, frontend | inherit | manager → fast-path frontend (no planner) | pass | trivial single-owner |
 
-**Summary:** 19/19 pass on dry-run against current manager/planner/AGENTS routing (default inherit models).
+**Summary:** 21/21 pass on dry-run against current manager/planner/AGENTS routing (default inherit models; #21 fast-path).

@@ -1,6 +1,6 @@
 # Agent kit
 
-Portable multi-agent setup for **Cursor**, **Claude Code**, and **GitHub Copilot**: manager-orchestrated specialists, call-graph gate (where supported), agent-memory, and shared rules.
+Portable multi-agent setup for **Cursor**, **Claude Code** (CLI and Desktop **Code** tab), and **GitHub Copilot**: manager-orchestrated specialists, call-graph gate (where supported), agent-memory, and shared rules.
 
 This folder is a **copy-friendly template**. Drop its contents into a project root, fill in `AGENTS.md`, then run the sync script if you edit canonical sources.
 
@@ -30,7 +30,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Feature | Cursor | Claude Code | GitHub Copilot |
 |---------|--------|-------------|----------------|
 | Stack card (`AGENTS.md`) | yes | yes (via `CLAUDE.md` + `AGENTS.md`) | yes |
-| Specialist agents | `.cursor/agents/` | `.claude/agents/` | `.github/agents/` |
+| Specialist agents | `.cursor/agents/` | `.claude/agents/` (CLI + Desktop **Code** tab) | `.github/agents/` |
 | Skills | `.cursor/skills/` (generated) | `.claude/skills/` | `.github/skills/` |
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
@@ -149,14 +149,20 @@ node scripts/check-agent-kit.mjs
 
 Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills line) automatically. If `check-agent-kit` still reports skills drift, run `node scripts/sync-project-skills.mjs` once; for adapter drift, run `node scripts/sync-tool-adapters.mjs`.
 5. **Cursor gate payload capture** (required before claiming unqualified hard): set `AGENT_KIT_GATE_LOG=1`, run a real nest attempt, record findings in [`docs/agent-kit/maturity.md`](docs/agent-kit/maturity.md). Normalized events append to `.agents/hooks/state/gate-log.jsonl` (or next to `AGENT_KIT_STATE_PATH`). Gate also appends structured deny/allow lines under `.agents/memory/runs/` (gitignored; `AGENT_KIT_RUN_EVENTS=0` to disable). Claude already uses stable `session_id`; Copilot has no hard gate.
-6. **Kit version**: `.agents/.kit-version` is printed by `check-agent-kit`. Cutting a release **tag** is a deliberate project action (ask before commit/tag); pin installs with `AGENT_KIT_REF=<tag>`.
+6. **Kit version**: `.agents/.kit-version` uses `kit:` (+ optional `source:` / install `installedAt:`) lines; printed by `check-agent-kit`. Cutting a release **tag** is a deliberate project action (ask before commit/tag); pin installs with `AGENT_KIT_REF=<tag>`.
 
 ## How to use
 
-- Multi-domain or multi-step work → invoke **`manager`** (it plans via `planner`, dispatches workers, relays decisions).
+- Multi-domain or multi-step work → invoke **`manager`** (it plans via `planner`, dispatches workers, relays decisions). Trivial single-owner one-shots → manager **fast-path** (dispatch that owner; skip planner).
 - Single clear specialist with known scope → you may invoke that agent directly; still use Modes and the worker-report JSON fence.
 - Durable product choices → manager reads agent-memory; after a settled decision, manager briefs `documenter` to append.
 - Sync upserts kit-owned agents/skills only (`x-owner: agent-kit` on synced skills); foreign files under `.cursor/agents/` (etc.) are left alone. Hooks/settings are merged, not wiped.
+
+### Host UX (visibility)
+
+- **Cursor:** Subagent Task output often does not stream into the parent chat. Manager must emit `[manager]` heartbeats **before** every Task and set UI title `<agent> [<model>]: <short task>`.
+- **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; use the same spawn titles. Desktop **Chat** / **Cowork** are out of kit scope.
+- See `.agents/protocols/host-visibility.md` (composed into manager).
 
 ## Customize checklist
 

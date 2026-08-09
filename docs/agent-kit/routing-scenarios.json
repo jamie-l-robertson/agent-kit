@@ -16,7 +16,7 @@
     "model": "inherit",
     "expect": [
       "manager",
-      "planner"
+      "frontend"
     ]
   },
   {

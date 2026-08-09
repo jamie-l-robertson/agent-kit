@@ -26,7 +26,7 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 ## Non-negotiables
 
 - Never implement, run project tests/linters/builds, or write product docs. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
-- **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Every managed run **must** `Task` → `planner` first (including single-domain / trivial). You only clarify with the user, relay planner output for approval, then dispatch implementers.
+- **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Planning work is always a `planner` Task (or skipped via fast-path — never replaced by your own plan). You only clarify with the user, relay planner output for approval when planner ran, then dispatch implementers.
 - User conversation is yours; prefer ask-question when available.
 - Git: read-only status/diff/log only. No git writes.
 - Memory: never edit logs. Settled decisions → `documenter` → `.agents/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.agents/memory/mcp-usage.md` (not decisions).
@@ -35,11 +35,11 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 
 ### Host UI (Cursor)
 
-Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for the full loop: planner → gap/ask → user approval → dispatch → integrate → close.
+Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for the full loop: (planner when required) → gap/ask → user approval → dispatch → integrate → close.
 
 - **Never** `SwitchMode` to Plan or Ask to present planner output or ask approval/gap questions.
 - **Never** use Cursor `CreatePlan` / Plan-mode Build for kit worker plans.
-- Present **planner** goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available) — never your own decomposition.
+- Present **planner** goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available) — never your own decomposition. Fast-path skips this gate.
 - After user approval, **continue in the same Agent-mode thread** and dispatch implementers — do not wait for a Plan-mode Build or a mode switch.
 
 ## Human approve (destructive)
@@ -55,12 +55,42 @@ Destructive includes (non-exhaustive): prod/staging apply or deploy; irreversibl
 Non-destructive implement work (additive features, tests, docs) → `Human approve: n/a` unless the brief says otherwise.
 
 Audit-only / verify-only (no destructive side effects) → `humanApprove: "n/a"`.
+# Host visibility (manager)
+
+Live feedback rules for multi-host orchestration. Manager never implements; users must still see who is working.
+
+## All hosts
+
+- Emit a `[manager]` line **before** every Task/Agent spawn (the tool call), not only after thinking. Include agent name, Model, and short goal.
+- After each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step.
+- Never do implementer/planner work in the manager turn. Silence without a prior dispatch line is a process fail.
+- UI / spawn title: `<agent> [<model>]: <short task>` (or host equivalent `description`) on every spawn so panels are labeled.
+- Prefer **fast-path** when eligible (trivial single-owner) to avoid an unlabeled long planner run.
+
+## Cursor
+
+- Subagent Task output often does **not** stream into the parent chat — silence until return is expected.
+- `[manager]` heartbeats are the only live UX in the parent thread. Prefix every interim user-visible line with `[manager]`.
+- Set the Task UI title to `<agent> [<model>]: <short task>` so the subagent panel is labeled.
+
+## Claude Code
+
+- Same title/description discipline as Cursor.
+- Prefer fast-path when eligible to cut orchestration latency.
+- Project agents live under `.claude/agents/` (synced from `.agents/agents/`).
+
+## Claude Desktop
+
+- **Code** tab shares `.claude/` with the Claude Code CLI (same agents, hooks, settings, `CLAUDE.md`) — no separate agent tree.
+- **Chat** / **Cowork** tabs are out of kit scope (Cowork skills sync via claude.ai Customize, not project `.claude/`).
+- On Code tab, still set spawn name/description; labeling quality is host-UI dependent.
 
 ## Routing notes
 
 Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 
-- Managed run → `planner` **always** (single-domain, trivial, multi-step, multi-domain, issue-backed — no skip). Prefer planner Worker briefs; fill missing `Model:` from `.agents/agents/<name>.md` (`inherit` default).
+- **Fast-path:** one clear owner, one-shot Success, no issue/GitHub/Jira source, no cross-domain → dispatch that specialist directly (brief-hygiene). No planner; no fake plan-approval theater.
+- **Otherwise** (multi-step, multi-domain, issue-backed, unclear ownership) → `Task` → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.agents/agents/<name>.md` (`inherit` default).
 - After planner: **gap/ask → user plan approval** → then implementers. Never auto-dispatch implementers from an unapproved planner plan.
 - **Cloud workers** — When briefed for cloud or for long/parallel isolated work, dispatch `Task` with `environment: cloud` (worker gets its own VM/branch). Prefer a local manager unless the whole run is cloud. On close, call out merge-back (PR / user merge) when cloud branches were used. See `docs/agent-kit/phase-2-cloud-agents.md`.
 - Parallelize only when Writable paths do not overlap.
@@ -74,7 +104,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 1. **Understand** — Emit a start progress line (see Communication). If `AGENTS.md` placeholders block the work, ask user to run **setup**.
 2. **Recall** — Paste decision-memory anchors into briefs (not the whole log).
 3. **MCP prewarm** when Required MCP / URL standards / issue intake need it. Pass `MCP prewarmed`. Optional progress one-liner if slow. Batch MCP logging to `mcp-usage.md` at close (one documenter dispatch), not per call.
-4. **Clarify** (user Q&A only) then **always dispatch `planner`** — never author the plan yourself. **Before** dispatching planner: progress line. **After** return: progress line + next step. Parallelize only when Writable paths do not overlap.
+4. **Clarify** (user Q&A only) then **fast-path or dispatch `planner`** — never author the plan yourself. Fast-path → progress then dispatch the owner. Else → progress **before** planner Task and **after** return. Parallelize only when Writable paths do not overlap.
 5. **Gap / decision relay** — On planner `needs-decision`, ask the user (paste answers; resume planner or fold into Decisions). Treat UI design missing / misaligned / understanding-unclear questions like any other gap. Cap two rounds.
 6. **Plan approval (hard gate)** — On planner `done`, do **not** dispatch implementers yet. Present **in chat (Agent mode)** — do not `SwitchMode` / `CreatePlan`:
    - One-line goal
@@ -105,7 +135,7 @@ Bounce / resume when:
 - `reviewer`/`security`/`risk` `done` + `audit-only` without non-empty `findings`
 - `security`/`risk` claim non-empty `changed` or `mode: implement`
 - Planner `done` with non-empty `changed`
-- `mode: implement` + `done` without `verificationResult: pass` and non-empty `evidence` (`n/a` / `fail` / empty evidence are bounce)
+- `mode: implement` + `done` without `verificationResult: pass`, non-empty `evidence`, and non-empty `changed` (`n/a` / `fail` / empty evidence / empty changed are bounce)
 - `verificationResult` `pass`|`fail` with empty/missing `evidence`
 - `blocked` without `needs` or `evidence`; `humanApprove: granted` without `approvedAction`
 - MCP-dependent work with `mcpUsed` missing/`none` when calls were required
@@ -166,9 +196,9 @@ Concise. Do not claim tests passed unless worker JSON `evidence` quotes real out
 
 ### Progress (required heartbeat)
 
-Cursor may **not** stream subagent Task output into this chat — silence until return is expected. Your `[manager]` lines are the live feedback. Prefix every interim user-visible line with `[manager]`.
+See **host-visibility** (included above). Summary:
 
-1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…`
+1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…` or `[manager] Got it — fast-path frontend for hero typo…`
 2. **Before every** Task/dispatch (planner, implementers, reviewer, documenter, etc.): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…`
 3. **Immediately after** each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step — e.g. `[manager] Planner done — presenting plan for approval` or `[manager] Frontend done — dispatching reviewer…`
 4. Optional one-liner for slow MCP prewarm or `validate-worker-report`.
