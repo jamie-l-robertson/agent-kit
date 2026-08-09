@@ -1,17 +1,16 @@
 ---
 description: >-
-  When /manager is used on Cursor, orchestrate in-parent with depth-1 kit Tasks.
-  Never Task→manager (hides nested workers as anonymous Waiting for subagent).
+  When /manager is used on Cursor, immediately Task→manager (foreground). Parent
+  must not implement or spawn kit workers itself.
 ---
 
 # Cursor /manager dispatch
 
 When the user message starts with `/manager` or the **manager** skill was explicitly invoked:
 
-1. **You** run the manager workflow in this chat. Do **not** emit `[manager] Got it…` / `Dispatching…` chatter — spawn kit `Task`s and use chat for approval / decisions / Final report only.
-2. **Never** call `Task` with `subagent_type: manager` — nesting hides planner/frontend panels (parent shows only “Waiting for subagent”; manager row shows Stopped).
-3. **Never** explore/read agent files/implement before the first kit `Task`.
-4. Spawn specialists with kit `subagent_type` only (`planner`, `frontend`, …), short `description` (3–5 words), `run_in_background: false`. **Omit Task `model`** (never `inherit`). Forbid `explore` / `generalPurpose` / `shell` / `browser` for kit work.
-5. Follow manager routing (fast-path vs planner → approval → implementers) from the manager agent doc / host-visibility protocol.
+1. Immediately `Task` with `subagent_type: manager`, short `description` (e.g. `manager: blog pagination`), `run_in_background: false`, **omit Task `model`**. `prompt` = user text after `/manager`.
+2. Do **not** explore/implement first. Do **not** emit `[manager] Got it…` / `Dispatching…` chatter.
+3. Do **not** Task `planner` / `frontend` / other kit workers from the parent — manager does that.
+4. Forbid parent `explore` / `generalPurpose` / `shell` / `browser` as stand-ins for kit specialists.
 
-Outside `/manager`, the `manager` agent file remains valid when Claude or an explicit Task→manager is used.
+The manager agent then follows its protocol (fast-path vs planner → approval → implementers) using the Cursor Task spawn contract in host-visibility.

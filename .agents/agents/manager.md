@@ -157,4 +157,4 @@ Concise. Do not claim tests passed unless worker JSON `evidence` quotes real out
 
 ### Progress
 
-Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels (via `description`) show who is working. Chat is for plan approval, user questions, blocked/needs-decision, and the Final report only. On Cursor `/manager`, do not Task→manager — orchestrate in-parent and spawn kit workers directly.
+Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels (via `description`) show who is working. Chat is for plan approval, user questions, blocked/needs-decision, and the Final report only. On Cursor `/manager`, the parent Task→`manager` once; you (manager) then spawn kit workers.

@@ -160,9 +160,10 @@ Install refreshes `.agents/memory/skills-inventory.md` (and the AGENTS.md Skills
 
 ### Host UX (visibility)
 
-- **Cursor `/manager`:** Orchestrate **in the parent chat** and spawn depth-1 kit Tasks. Do **not** `Task`→`manager`. **Omit Task `model`** (never pass `inherit`). No `[manager] Got it…` / `Dispatching…` chatter — Task panels are the progress UI. Skill + rule `manager-slash-cursor`.
-- **Cursor Task contract:** Named kit `subagent_type` + short `description` = labeled panel; avoid `explore` / `generalPurpose` / background for kit workers.
-- **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; Task→manager nesting is OK when the host shows children. Desktop **Chat** / **Cowork** are out of kit scope.
+- **Cursor `/manager`:** Parent immediately `Task`→`manager` (short `description`, **omit Task `model`**, foreground). Parent does not spawn `frontend`/`planner`. No `[manager] Got it…` / `Dispatching…` chatter. Skill + rule `manager-slash-cursor`.
+- **Cursor Task contract:** Named kit `subagent_type` + short `description` = labeled panel; avoid `explore` / `generalPurpose` / background for kit workers; never pass Task `model: inherit`.
+- **Stopped + Waiting for subagent:** Often a Cursor UI/runtime bug (child may still run). Wait / open the card; don’t re-prompt; Reload Window if stuck; Copy Request ID for Cursor. Gate check: `AGENT_KIT_GATE_LOG=1` then inspect `.agents/hooks/state/gate-log.jsonl` for `"action":"deny"`.
+- **Claude Code / Desktop Code:** Same `.claude/agents/` adapters; Task→manager nesting is normal. Desktop **Chat** / **Cowork** are out of kit scope.
 - See `.agents/protocols/host-visibility.md` (composed into manager).
 
 ## Customize checklist
