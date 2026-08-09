@@ -463,19 +463,9 @@ function denyNestMessage(effectiveRole) {
 }
 
 function maybeDenySpawn(state, normalized) {
-  const hasIdentity = !!(
-    normalized.sessionId ||
-    normalized.conversationId ||
-    normalized.parentConversationId ||
-    normalized.callerAgentId
-  )
-  if (!hasIdentity) {
-    return {
-      action: 'deny',
-      message:
-        'Blocked: spawn with no session/conversation identity (fail-closed).',
-    }
-  }
+  // Noon semantics: missing session/conversation/parent ids → treat as root via
+  // resolveEffectiveCaller (no parentOrCaller → ROOT). Do not deny lean Cursor
+  // Task preToolUse payloads — failClosed + identity deny caused Stopped.
   const effectiveRole = resolveEffectiveCaller(state, normalized)
   if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
     return {

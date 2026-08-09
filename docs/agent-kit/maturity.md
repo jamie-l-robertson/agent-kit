@@ -9,7 +9,7 @@ Living status for kit correctness vs platform-shaped next steps.
 | `verify-only` / `document` + `changed` bypass | **Done** — validator + schema (`verify-only` empty changed; `document` path pattern) + protocol |
 | Lock-steal timeout | **Done** — mkdir lock, fail-closed (no steal); `AGENT_KIT_LOCK_TIMEOUT_MS` |
 | Concurrency test theater | **Done** — multiprocess shared-state test |
-| Caller identity / invent-root | **Done** — unmapped parent → `unknown` deny; empty parent → `root` (main-agent Task); no session/conversation identity → deny; **`conversationId` before `sessionId`** so worker conv aliases beat session root |
+| Caller identity / invent-root | **Done** — unmapped parent → `unknown` deny; empty parent / missing ids → `root` (lean Cursor Task allow; noon semantics); **`conversationId` before `sessionId`** so worker conv aliases beat session root |
 | sessionId-before-conversationId fail-open | **Done** — nest without parent + worker `conversationId` alias denies (tests + check smoke) |
 | Real Cursor gate-log capture | **Ops** — set `AGENT_KIT_GATE_LOG=1`, attempt a worker nest, redact notes below |
 | Kit release tag | **Ops** — user-approved git tag (setup never auto-tags); pin via `AGENT_KIT_REF` |

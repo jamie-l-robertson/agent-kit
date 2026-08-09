@@ -810,7 +810,8 @@ test('nest deny appends run event when enabled', () => {
   assert.equal(last.agent, 'backend')
 })
 
-test('spawn with no session identity fails closed to _default', () => {
+test('spawn with no session identity on subagentStart with gateOnStart still nests by role only', () => {
+  // With gateOnStart true and no ids: resolveEffectiveCaller → root → allow.
   const d = decide({
     event: 'subagentStart',
     sessionId: '',
@@ -822,7 +823,7 @@ test('spawn with no session identity fails closed to _default', () => {
     callerAgentId: '',
     gateOnStart: true,
   })
-  assert.equal(d.action, 'deny')
+  assert.equal(d.action, 'allow')
 })
 
 test('Cursor lean subagentStart is noop (gateOnStart false); does not deny', () => {
@@ -836,7 +837,7 @@ test('Cursor lean subagentStart is noop (gateOnStart false); does not deny', () 
   assert.equal(d.action, 'noop')
 })
 
-test('Cursor lean preToolUse still fail-closed without identity', () => {
+test('Cursor lean preToolUse allows as root (noon semantics)', () => {
   const d = decide(
     normalizeCursorPayload({
       hook_event_name: 'preToolUse',
@@ -844,8 +845,7 @@ test('Cursor lean preToolUse still fail-closed without identity', () => {
       tool_input: { subagent_type: 'manager' },
     }),
   )
-  assert.equal(d.action, 'deny')
-  assert.match(d.message, /no session\/conversation identity/i)
+  assert.equal(d.action, 'allow')
 })
 
 test('Cursor root→manager and manager→worker allow on preToolUse; worker nest denies', () => {

@@ -115,7 +115,7 @@ Workarounds:
 
 Gate deny check (kit-side):
 
-Nest policy is **hard on Task `preToolUse`** only. Cursor `subagentStart` is record-only (`failClosed: false`) so lean payloads cannot kill the child. Denies always append to `.agents/hooks/state/gate-log.jsonl` (no env needed). Full allow/noop capture:
+Nest policy is **hard on Task `preToolUse`** only when the caller is a known worker (or unmapped parent → `unknown`). Missing session/conversation ids on lean Cursor Task payloads **allow** as root (noon semantics — identity fail-closed caused Stopped). Cursor `subagentStart` is record-only (`failClosed: false`). Denies always append to `.agents/hooks/state/gate-log.jsonl` (no env needed). Full allow/noop capture:
 
 ```bash
 export AGENT_KIT_GATE_LOG=1
@@ -123,7 +123,7 @@ export AGENT_KIT_GATE_LOG=1
 # inspect .agents/hooks/state/gate-log.jsonl for "action":"deny"
 ```
 
-- `"action":"deny"` on `preToolUse` → nest/identity policy (kit).
+- `"action":"deny"` on `preToolUse` → nest policy (known worker / unknown parent).
 - No denies but UI still Stopped while work completes → Cursor host UI/runtime.
 
 ## Cursor (parent chat)
