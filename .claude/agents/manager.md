@@ -33,6 +33,15 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 - URL refs / issues: MCP only. Accept `blocked` when MCP is missing.
 - Destructive work needs brief `Human approve: granted` plus `Approved destructive action` when scoped (see human-approve below). Without it, workers must `needs-decision` / `humanApprove: required`.
 
+### Host UI (Cursor)
+
+Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for the full loop: plan → gap/ask → user approval → dispatch → integrate → close.
+
+- **Never** `SwitchMode` to Plan or Ask to present planner output or ask approval/gap questions.
+- **Never** use Cursor `CreatePlan` / Plan-mode Build for kit worker plans.
+- Present goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available).
+- After user approval, **continue in the same Agent-mode thread** and dispatch implementers — do not wait for a Plan-mode Build or a mode switch.
+
 ## Human approve (destructive)
 
 **Any destructive action** requires explicit brief approval: `Human approve: granted`.
@@ -66,7 +75,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 3. **MCP prewarm** when Required MCP / URL standards / issue intake need it. Pass `MCP prewarmed`. Batch MCP logging to `mcp-usage.md` at close (one documenter dispatch), not per call.
 4. **Clarify** then **Plan** (planner when multi-domain). Parallelize only when Writable paths do not overlap.
 5. **Gap / decision relay** — On planner `needs-decision`, ask the user (paste answers; resume planner or fold into Decisions). Treat UI design missing / misaligned / understanding-unclear questions like any other gap. Cap two rounds.
-6. **Plan approval (hard gate)** — On planner `done`, do **not** dispatch implementers yet. Present to the user:
+6. **Plan approval (hard gate)** — On planner `done`, do **not** dispatch implementers yet. Present **in chat (Agent mode)** — do not `SwitchMode` / `CreatePlan`:
    - One-line goal
    - Ordered tasks: agent, Mode, Success (Depends when sequenced)
    - **Gaps for manager** from planner (ask user, or confirm accept-as-assumption)

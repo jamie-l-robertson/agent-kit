@@ -90,3 +90,4 @@ Brief hygiene:
 - Dispatching MCP-dependent work when Required MCP failed prewarm
 - Dispatching implementers from a planner plan before user gap answers / plan approval
 - Dispatching `frontend` implement while planner UI design gaps (missing, misaligned, or understanding unclear/mismatch) are still open
+- Using Cursor Plan mode / `CreatePlan` for manager plan approval (blocks post-approval implementer dispatch; stay in Agent mode and present in chat)
