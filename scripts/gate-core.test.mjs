@@ -156,7 +156,7 @@ test('unmapped parent with empty map fails closed (no root invent)', () => {
   assert.match(d.message, /unknown/i)
 })
 
-test('resolveEffectiveCaller: empty parent without map is unknown', () => {
+test('resolveEffectiveCaller: empty parent is root (main agent)', () => {
   assert.equal(
     resolveEffectiveCaller(emptyState(), {
       callerAgentType: '',
@@ -165,7 +165,7 @@ test('resolveEffectiveCaller: empty parent without map is unknown', () => {
       conversationId: 'sess',
       sessionId: 'sess',
     }),
-    'unknown',
+    'root',
   )
 })
 
@@ -182,6 +182,71 @@ test('resolveEffectiveCaller: sessionId mapped to root allows', () => {
     }),
     'root',
   )
+})
+
+test('conversationId worker alias beats sessionId root (no parent nest deny)', () => {
+  const sid = 'prec-root'
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'sessionStart',
+      session_id: sid,
+      conversation_id: sid,
+    }),
+  )
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: sid,
+      conversation_id: 'fe-conv',
+      parent_conversation_id: sid,
+      subagent_id: 'fe-1',
+      subagent_type: 'frontend',
+    }),
+  )
+  assert.equal(rolesOf(sid)['fe-conv'], 'frontend')
+  assert.equal(
+    resolveEffectiveCaller(loadState(), {
+      callerAgentType: '',
+      callerAgentId: '',
+      parentConversationId: '',
+      conversationId: 'fe-conv',
+      sessionId: sid,
+    }),
+    'frontend',
+  )
+  const denyWorkerConv = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      session_id: sid,
+      conversation_id: 'fe-conv',
+      parent_conversation_id: '',
+      subagent_id: 'be-2',
+      tool_input: { subagent_type: 'backend' },
+    }),
+  )
+  assert.equal(denyWorkerConv.action, 'deny')
+})
+
+test('main-agent spawn with session root conversation still allows', () => {
+  const sid = 'main-root'
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'sessionStart',
+      session_id: sid,
+      conversation_id: sid,
+    }),
+  )
+  const allow = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: sid,
+      conversation_id: sid,
+      parent_conversation_id: '',
+      subagent_id: 'mgr-1',
+      subagent_type: 'manager',
+    }),
+  )
+  assert.equal(allow.action, 'allow')
 })
 
 test('SubagentStop clears role', () => {

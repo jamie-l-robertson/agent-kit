@@ -125,6 +125,22 @@ function smokeCursorGate() {
     if (denyStart.action !== 'deny') {
       throw new Error('Cursor smoke: subagentStart nest not denied')
     }
+    // No parent_conversation_id — conversation alias must still deny (not session root)
+    const denyNoParent = decide(
+      normalizeCursorPayload({
+        hook_event_name: 'preToolUse',
+        session_id: sid,
+        conversation_id: 'chk-fe',
+        parent_conversation_id: '',
+        subagent_id: 'chk-be-2',
+        tool_input: { subagent_type: 'backend' },
+      }),
+    )
+    if (denyNoParent.action !== 'deny') {
+      throw new Error(
+        'Cursor smoke: worker nest without parent (conv alias) not denied',
+      )
+    }
   })
 }
 

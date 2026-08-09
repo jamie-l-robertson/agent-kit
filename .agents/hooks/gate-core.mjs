@@ -305,14 +305,17 @@ export function resolveEffectiveCaller(state, normalized) {
   for (const id of parentOrCaller) {
     if (roles[id]) return roles[id]
   }
-  if (normalized.sessionId && roles[normalized.sessionId]) {
-    return roles[normalized.sessionId]
-  }
+  // conversationId before sessionId: session is always root after sessionStart;
+  // worker aliases live on conversationId (nest without parent must still deny).
   if (normalized.conversationId && roles[normalized.conversationId]) {
     return roles[normalized.conversationId]
   }
-  // Fail-closed: do not invent root when caller identity is missing/unmapped
-  return 'unknown'
+  if (normalized.sessionId && roles[normalized.sessionId]) {
+    return roles[normalized.sessionId]
+  }
+  // Unmapped parent/caller id → fail closed. No parent ids → root (main agent Task).
+  if (parentOrCaller.length > 0) return 'unknown'
+  return ROOT_ROLE
 }
 
 function emitSpawnDecision(normalized, result, sessionId, callerRoleName) {
@@ -458,6 +461,19 @@ function denyNestMessage(effectiveRole) {
 }
 
 function maybeDenySpawn(state, normalized) {
+  const hasIdentity = !!(
+    normalized.sessionId ||
+    normalized.conversationId ||
+    normalized.parentConversationId ||
+    normalized.callerAgentId
+  )
+  if (!hasIdentity) {
+    return {
+      action: 'deny',
+      message:
+        'Blocked: spawn with no session/conversation identity (fail-closed).',
+    }
+  }
   const effectiveRole = resolveEffectiveCaller(state, normalized)
   if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
     return {

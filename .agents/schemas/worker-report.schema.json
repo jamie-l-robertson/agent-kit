@@ -244,6 +244,25 @@
           "changed": { "type": "array", "maxItems": 0 }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "document" }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "changed": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(AGENTS\\.md|CLAUDE\\.md|README\\.md|docs/.+|\\.agents/.+\\.md)$"
+            }
+          }
+        }
+      }
     }
   ]
 }
