@@ -23,6 +23,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
   readdirSync,
@@ -466,9 +467,17 @@ Optional:
   }
 }
 
-const isMain =
-  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
+/** True when this file is the process entry (realpath — macOS /var vs /private/var). */
+function isMainModule(metaUrl = import.meta.url, argv1 = process.argv[1]) {
+  if (!argv1) return false
+  const self = fileURLToPath(metaUrl)
+  try {
+    return realpathSync(self) === realpathSync(argv1)
+  } catch {
+    return resolve(self) === resolve(argv1)
+  }
+}
 
-if (isMain) {
+if (isMainModule()) {
   main()
 }

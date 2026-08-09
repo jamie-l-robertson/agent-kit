@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,8 +10,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { installFrom } from './install.mjs'
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -226,5 +229,26 @@ test('install Claude merge keeps sibling hooks and adds SessionStart', () => {
     assert.ok(settings.hooks.SessionStart?.length)
   } finally {
     rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('install.mjs CLI entry runs when invoked via TMPDIR path', () => {
+  // Regression: macOS argv path (/var/folders) vs import.meta.url (/private/var/...)
+  // made isMain false, so curl|bash exited 0 with no install.
+  const staging = mkdtempSync(join(tmpdir(), 'akit-cli-'))
+  try {
+    cpSync(join(kitRoot, 'scripts'), join(staging, 'scripts'), { recursive: true })
+    const entry = join(staging, 'scripts', 'install.mjs')
+    const r = spawnSync(process.execPath, [entry, '--help'], {
+      encoding: 'utf8',
+    })
+    assert.equal(r.status, 0, r.stderr || 'non-zero exit')
+    assert.match(
+      r.stdout,
+      /Install agent kit into the current directory/,
+      `expected --help output; got ${JSON.stringify(r.stdout)}`,
+    )
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
   }
 })
