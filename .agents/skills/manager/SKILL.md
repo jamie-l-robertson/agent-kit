@@ -13,9 +13,9 @@ You are running the **manager workflow in this chat** (parent Agent). Do **not**
 
 ## Hard rules (first actions)
 
-1. **Do not** explore the repo, read `.cursor/agents/manager.md`, or implement anything before dispatching.
+1. **Do not** explore the repo, read agent/skill files for theater, or implement anything before dispatching.
 2. **Do not** call `Task` with `subagent_type` `manager`, `explore`, `shell`, `browser`, or `generalPurpose`.
-3. Emit one `[manager]` line, then call `Task` for the first specialist (usually `planner`, or fast-path owner).
+3. **Do not** print `[manager] Got it…` / `[manager] Dispatching…` — call `Task` for the first specialist (usually `planner`, or fast-path owner).
 4. Follow the manager protocol in `.agents/agents/manager.md` / composed `.cursor/agents/manager.md` for routing, plan approval, briefs, bounce, and Final report — but **you** are the orchestrator in this thread.
 
 ## Cursor Task spawn (every worker)
@@ -23,9 +23,10 @@ You are running the **manager workflow in this chat** (parent Agent). Do **not**
 For each specialist:
 
 - `subagent_type`: kit name only (`planner` | `frontend` | `backend` | `tester` | `reviewer` | `documenter` | `security` | `devops` | `infrastructure` | `risk`)
-- `description`: `<agent> [<model>]: <short task>`
-- `prompt`: brief-hygiene Worker brief
-- Foreground: `run_in_background: false` or omit
+- `description`: **3–5 words**, e.g. `frontend: blog pagination` — do **not** put `[inherit]` in the title
+- `prompt`: brief-hygiene Worker brief (include `Model: inherit` **inside the brief text** if needed)
+- **Omit Task `model`** — do not pass `model: "inherit"` (Cursor often rejects it → subagent **Stopped** + parent stuck on Waiting for subagent). Only pass `model` when the host enum allows a concrete value (e.g. `fast`) and you intend it.
+- Foreground: `run_in_background: false` (required on Cursor unless the user asked for parallel/async)
 
 Workers appear as **sibling** panels under this chat — that is the visibility fix.
 

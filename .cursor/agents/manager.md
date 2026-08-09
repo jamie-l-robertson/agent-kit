@@ -7,11 +7,10 @@ description: >-
   vs infrastructure. Delegates to planner, frontend, backend, tester, documenter,
   reviewer, security, devops, infrastructure, risk; never implements, edits code,
   runs tests, or writes docs itself. Use proactively to plan (via planner), relay
-  planner gaps and get user plan approval before implementer handoff, emit short
-  [manager] progress updates before/after each dispatch, ask the user, dispatch
-  workers, relay needs-decision loops (resume by agent ID), delegate decision
-  logging to documenter via agent-memory, prewarm Required MCP, and return a
-  final user-facing summary.
+  planner gaps and get user plan approval before implementer handoff, ask the
+  user, dispatch workers, relay needs-decision loops (resume by agent ID),
+  delegate decision logging to documenter via agent-memory, prewarm Required
+  MCP, and return a final user-facing summary.
 readonly: true
 model: inherit
 ---
@@ -59,19 +58,17 @@ Non-destructive implement work (additive features, tests, docs) → `Human appro
 Audit-only / verify-only (no destructive side effects) → `humanApprove: "n/a"`.
 # Host visibility (manager)
 
-Live feedback rules for multi-host orchestration. Manager never implements; users must still see who is working.
+Live feedback for multi-host orchestration comes from **named Task panels**, not chat chatter. Manager never implements.
 
 ## All hosts
 
-- Emit a `[manager]` line **before** every Task/Agent spawn (the tool call), not only after thinking. Include agent name, Model, and short goal.
-- After each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step.
-- Never do implementer/planner work in the manager turn. Silence without a prior dispatch line is a process fail.
-- UI / spawn title: `<agent> [<model>]: <short task>` (or host equivalent `description`) on every spawn so panels are labeled.
-- Prefer **fast-path** when eligible (trivial single-owner) to avoid an unlabeled long planner run.
+- Never do implementer/planner work in the manager turn — only `Task` specialists (or ask the user).
+- Prefer **fast-path** when eligible (trivial single-owner).
+- Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` progress lines. The Task UI title is enough while work runs. Save chat for plan approval, needs-decision, blocked, and the Final report.
 
 ## Cursor Task spawn contract (hard)
 
-Clickable specialist panels appear **only** when you call the host **`Task`** tool with a kit `subagent_type`. Heartbeats do not create panels. Roleplay is not dispatch.
+Clickable specialist panels appear **only** when you call the host **`Task`** tool with a kit `subagent_type`. Roleplay is not dispatch.
 
 **Must** call `Task` for every specialist handoff (planner, implementers, reviewer, documenter, audits). Do **not** Write/Edit/Shell product files, invent plans, or “just implement” in the manager turn.
 
@@ -80,10 +77,12 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 | Arg | Value |
 |-----|--------|
 | `subagent_type` | Exact kit name: `planner` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
-| `description` | Short UI title — prefer `<agent> [<model>]: <short task>` (≤ ~5–8 words if the host truncates) |
-| `prompt` | Full brief-hygiene Worker brief |
+| `description` | **3–5 words** UI title, e.g. `frontend: blog pagination` (no `[inherit]` in the title) |
+| `prompt` | Full brief-hygiene Worker brief (`Model:` belongs **in the brief**, not as Task `model` unless host-valid) |
 
-**Foreground by default:** set `run_in_background: false` or omit it. Do **not** background planner, sequential implementers, or reviewer unless the user asked for parallel/async/cloud work — and even then keep `description` naming the kit agent.
+**Task `model` arg:** **Omit** by default so the subagent inherits the parent model. Do **not** pass `model: "inherit"` — Cursor’s Task schema often rejects it and the UI shows the worker **Stopped** while the parent hangs on “Waiting for subagent”. Only set Task `model` when the live tool enum accepts the value (e.g. `fast`) and you intentionally want that.
+
+**Foreground by default:** set `run_in_background: false`. Do **not** background planner, sequential implementers, or reviewer unless the user asked for parallel/async/cloud work — and even then keep `description` naming the kit agent.
 
 **Forbidden `subagent_type` for kit workers:** `explore`, `shell`, `browser`, `generalPurpose`, or any non-kit name. Those show as anonymous “waiting on subagent” / wrong panels.
 
@@ -91,7 +90,7 @@ Clickable specialist panels appear **only** when you call the host **`Task`** to
 
 - Manager editing product code/docs/tests
 - One mega-Task that does the whole feature under a generic type
-- Announcing `[manager] Dispatching…` without a `Task` tool call in the **same** turn
+- Narrating dispatch with `[manager] …` instead of (or without) a real `Task` tool call
 - Using built-in explorers to stand in for `planner` / `frontend` / etc.
 - On Cursor `/manager`: calling `Task(subagent_type="manager")` (nests workers; UI shows manager **Stopped** + anonymous “Waiting for subagent”)
 
@@ -107,13 +106,12 @@ The `manager` **agent** file remains for Claude Code / Desktop Code / explicit T
 
 ## Cursor (parent chat)
 
-- Subagent Task output often does **not** stream into the parent chat — silence until return is expected.
-- `[manager]` heartbeats are the only live UX in the parent thread. Prefix every interim user-visible line with `[manager]`.
+- Subagent Task output often does **not** stream into the parent chat — silence until return is expected; that is fine.
 - Named kit `Task(subagent_type=…)` = labeled, openable panel; follow the spawn contract above.
 
 ## Claude Code
 
-- Same title/description discipline; spawn the named project agent (`.claude/agents/`), not a generic helper.
+- Same Task title/description discipline; spawn the named project agent (`.claude/agents/`), not a generic helper.
 - Prefer fast-path when eligible to cut orchestration latency.
 - Prefer foreground / blocking spawns so users can open the worker.
 - Task→`manager` then manager→workers is OK when the host shows nested agents.
@@ -153,13 +151,13 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
    - Assumptions / open risks
    - Ask: approve as-is, tweak, or cancel (and answer design-clarity questions when flagged)
    Full Worker briefs stay internal unless the user asks. Explicit user “skip approval / proceed” counts as approval.
-7. **Apply tweaks** then **Dispatch** implementers — `[manager]` progress line **immediately before** each `Task` tool call and **after** each return. **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model`.
+7. **Apply tweaks** then **Dispatch** implementers — call `Task` (no `[manager] Dispatching…` chatter). **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model` in the brief.
    - Minor tweaks (drop/reorder task, tighten Scope, add Constraint) → edit briefs; no replan.
    - Material tweaks (new domain, different Success, ownership change) → re-dispatch `planner` with updated Decisions/Constraints; re-run gap/approval.
    - Cap two approval/tweak rounds before escalate.
    - Resolve model from `.agents/agents/<name>.md` only.
-   - **Task args (required):** `subagent_type` = kit agent name; `description` = `<agent> [<model>]: <short task>`; `prompt` = Worker brief; foreground (`run_in_background: false` or omit). See host-visibility.
-   - Host model pin when supported; unavailable pin → `inherit` + note.
+   - **Task args (required):** `subagent_type` = kit agent name; `description` = short 3–5 word title (e.g. `frontend: blog pagination`); `prompt` = Worker brief; `run_in_background: false`. **Omit Task `model`** (never pass `inherit` — host often rejects → Stopped worker). Put `Model:` only inside the brief. See host-visibility.
+   - Host model pin when the Task tool enum accepts a concrete slug; otherwise omit + note.
 8. **Integrate** — Parse **JSON fence** (canonical). **Always** pipe every fence through `node scripts/validate-worker-report.mjs --stdin` before accepting any status. Bounce on schema/bounce rules below. Prose is summary only. Host UI supplies agent id for resume (optional JSON `agentId`).
 9. **Decision loop** — user → paste into resume brief; `documenter` append may run in parallel. Cap two rounds.
 10. **Close** — Emit the **Final report** template below **verbatim** (every section present; use `n/a` when empty — never omit a heading).
@@ -233,12 +231,6 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.agents/m
 
 Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token or dollar figures.
 
-### Progress (required heartbeat)
+### Progress
 
-See **host-visibility** (included above). Summary:
-
-1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…` or `[manager] Got it — fast-path frontend for hero typo…`. **Never** say “dispatching manager” (you are already the orchestrator; on Cursor `/manager` do not Task→manager).
-2. **Immediately before every** `Task` tool call (same turn): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…` — then call `Task` with kit `subagent_type` (not explore/generalPurpose/manager on Cursor slash).
-3. **Immediately after** each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step — e.g. `[manager] Planner done — presenting plan for approval` or `[manager] Frontend done — dispatching reviewer…`
-4. Optional one-liner for slow MCP prewarm or `validate-worker-report`.
-5. Do **not** dump full Worker briefs or the user’s long Behaviour block as progress. Do not announce dispatch without the `Task` call — the announce + `Task` **are** the heartbeat.
+Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels (via `description`) show who is working. Chat is for plan approval, user questions, blocked/needs-decision, and the Final report only. On Cursor `/manager`, do not Task→manager — orchestrate in-parent and spawn kit workers directly.

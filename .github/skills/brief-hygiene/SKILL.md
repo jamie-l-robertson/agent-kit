@@ -69,7 +69,7 @@ Brief hygiene:
 |-------|------|
 | `Task` / `Success` | Imperative goal; Success must be checkable. |
 | `Mode` | Never omit. Never assume `implement`. |
-| `Model` | Canonical `model:` from `.agents/agents/<name>.md`. |
+| `Model` | Canonical `model:` from `.agents/agents/<name>.md` — put in the **brief text**. On Cursor, do **not** pass `model: inherit` as a Task tool argument (omit Task `model` so the host inherits the parent). |
 | `Human approve` | `n/a` for non-destructive; `granted` required before destructive work. Definition: `.agents/protocols/human-approve.md`. |
 | `Approved destructive action` | When `Human approve: granted`, name the exact action/env/resource (not a blanket grant). |
 | `Decisions already made` | Settled choices for this task (or `none`). |
@@ -91,3 +91,4 @@ Brief hygiene:
 - Dispatching implementers from a planner plan before user gap answers / plan approval
 - Dispatching `frontend` implement while planner UI design gaps (missing, misaligned, or understanding unclear/mismatch) are still open
 - Using Cursor Plan mode / `CreatePlan` for manager plan approval (blocks post-approval implementer dispatch; stay in Agent mode and present in chat)
+- Passing Task tool `model: "inherit"` on Cursor (often rejected → worker Stopped / Waiting for subagent); omit Task `model` instead

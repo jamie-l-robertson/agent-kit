@@ -7,11 +7,10 @@ description: >-
   vs infrastructure. Delegates to planner, frontend, backend, tester, documenter,
   reviewer, security, devops, infrastructure, risk; never implements, edits code,
   runs tests, or writes docs itself. Use proactively to plan (via planner), relay
-  planner gaps and get user plan approval before implementer handoff, emit short
-  [manager] progress updates before/after each dispatch, ask the user, dispatch
-  workers, relay needs-decision loops (resume by agent ID), delegate decision
-  logging to documenter via agent-memory, prewarm Required MCP, and return a
-  final user-facing summary.
+  planner gaps and get user plan approval before implementer handoff, ask the
+  user, dispatch workers, relay needs-decision loops (resume by agent ID),
+  delegate decision logging to documenter via agent-memory, prewarm Required
+  MCP, and return a final user-facing summary.
 readonly: true
 model: inherit
 ---
@@ -76,13 +75,13 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
    - Assumptions / open risks
    - Ask: approve as-is, tweak, or cancel (and answer design-clarity questions when flagged)
    Full Worker briefs stay internal unless the user asks. Explicit user “skip approval / proceed” counts as approval.
-7. **Apply tweaks** then **Dispatch** implementers — `[manager]` progress line **immediately before** each `Task` tool call and **after** each return. **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model`.
+7. **Apply tweaks** then **Dispatch** implementers — call `Task` (no `[manager] Dispatching…` chatter). **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model` in the brief.
    - Minor tweaks (drop/reorder task, tighten Scope, add Constraint) → edit briefs; no replan.
    - Material tweaks (new domain, different Success, ownership change) → re-dispatch `planner` with updated Decisions/Constraints; re-run gap/approval.
    - Cap two approval/tweak rounds before escalate.
    - Resolve model from `.agents/agents/<name>.md` only.
-   - **Task args (required):** `subagent_type` = kit agent name; `description` = `<agent> [<model>]: <short task>`; `prompt` = Worker brief; foreground (`run_in_background: false` or omit). See host-visibility.
-   - Host model pin when supported; unavailable pin → `inherit` + note.
+   - **Task args (required):** `subagent_type` = kit agent name; `description` = short 3–5 word title (e.g. `frontend: blog pagination`); `prompt` = Worker brief; `run_in_background: false`. **Omit Task `model`** (never pass `inherit` — host often rejects → Stopped worker). Put `Model:` only inside the brief. See host-visibility.
+   - Host model pin when the Task tool enum accepts a concrete slug; otherwise omit + note.
 8. **Integrate** — Parse **JSON fence** (canonical). **Always** pipe every fence through `node scripts/validate-worker-report.mjs --stdin` before accepting any status. Bounce on schema/bounce rules below. Prose is summary only. Host UI supplies agent id for resume (optional JSON `agentId`).
 9. **Decision loop** — user → paste into resume brief; `documenter` append may run in parallel. Cap two rounds.
 10. **Close** — Emit the **Final report** template below **verbatim** (every section present; use `n/a` when empty — never omit a heading).
@@ -156,12 +155,6 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.agents/m
 
 Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token or dollar figures.
 
-### Progress (required heartbeat)
+### Progress
 
-See **host-visibility** (included above). Summary:
-
-1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…` or `[manager] Got it — fast-path frontend for hero typo…`. **Never** say “dispatching manager” (you are already the orchestrator; on Cursor `/manager` do not Task→manager).
-2. **Immediately before every** `Task` tool call (same turn): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…` — then call `Task` with kit `subagent_type` (not explore/generalPurpose/manager on Cursor slash).
-3. **Immediately after** each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step — e.g. `[manager] Planner done — presenting plan for approval` or `[manager] Frontend done — dispatching reviewer…`
-4. Optional one-liner for slow MCP prewarm or `validate-worker-report`.
-5. Do **not** dump full Worker briefs or the user’s long Behaviour block as progress. Do not announce dispatch without the `Task` call — the announce + `Task` **are** the heartbeat.
+Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels (via `description`) show who is working. Chat is for plan approval, user questions, blocked/needs-decision, and the Final report only. On Cursor `/manager`, do not Task→manager — orchestrate in-parent and spawn kit workers directly.
