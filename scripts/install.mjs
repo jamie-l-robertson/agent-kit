@@ -11,7 +11,10 @@
  * Env:
  *   AGENT_KIT_REPO  owner/name (default: jamie-l-robertson/agent-kit)
  *   AGENT_KIT_REF   branch/tag/sha (default: main)
- *   AGENT_KIT_FORCE=1  overwrite existing AGENTS.md / CLAUDE.md
+ *   AGENT_KIT_FORCE=1  overwrite existing AGENTS.md / CLAUDE.md / differing scripts
+ *
+ * Pin installs with AGENT_KIT_REF=<tag> after the kit tags a release (DEFAULT_REF
+ * stays main until you tag; prefer a tag in production consumers).
  */
 
 import {
@@ -211,7 +214,7 @@ function restoreRuleKeeps(target, snap, kitLabel) {
   }
 }
 
-function copyKitScripts(kitRoot, target) {
+function copyKitScripts(kitRoot, target, { force = false } = {}) {
   const srcDir = join(kitRoot, 'scripts')
   const destDir = join(target, 'scripts')
   ensureDir(destDir)
@@ -219,8 +222,48 @@ function copyKitScripts(kitRoot, target) {
   for (const name of readdirSync(srcDir)) {
     if (!name.endsWith('.mjs') && !name.endsWith('.sh')) continue
     if (name.endsWith('.test.mjs')) continue
-    cpSync(join(srcDir, name), join(destDir, name))
+    const src = join(srcDir, name)
+    const dest = join(destDir, name)
+    if (existsSync(dest) && !force) {
+      const a = readFileSync(src)
+      const b = readFileSync(dest)
+      if (!a.equals(b)) {
+        console.log(
+          `Skipped scripts/${name} (differs from kit; pass --force to overwrite)`,
+        )
+        continue
+      }
+    }
+    cpSync(src, dest)
   }
+}
+
+function assertValidKitJson(kitRoot) {
+  const paths = [
+    join(kitRoot, '.cursor', 'hooks.json'),
+    join(kitRoot, '.claude', 'settings.json'),
+  ]
+  for (const p of paths) {
+    if (!existsSync(p)) continue
+    try {
+      JSON.parse(readFileSync(p, 'utf8'))
+    } catch (err) {
+      throw new Error(
+        `Kit preflight: invalid JSON in ${p}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+}
+
+function writeKitVersion(target, kitLabel) {
+  const dest = join(target, '.agents', '.kit-version')
+  ensureDir(dirname(dest))
+  const lines = [
+    `kit: ${kitLabel}`,
+    `installedAt: ${new Date().toISOString()}`,
+    '',
+  ]
+  writeFileSync(dest, lines.join('\n'), 'utf8')
 }
 
 function readJsonIfExists(path) {
@@ -246,6 +289,7 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
       throw new Error(`Kit incomplete: missing ${rel} under ${kitRoot}`)
     }
   }
+  assertValidKitJson(kitRoot)
 
   const label = kitLabel || kitRoot
   const priorMemory = snapshotMemoryFiles(target)
@@ -256,6 +300,7 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
   )
 
   copyDir(join(kitRoot, '.agents'), join(target, '.agents'))
+  writeKitVersion(target, label)
   copyTreeFiltered(join(kitRoot, '.cursor'), join(target, '.cursor'), {
     skipFiles: new Set(['hooks.json']),
   })
@@ -310,7 +355,7 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
     if (existsSync(src)) copyDir(src, join(target, '.github', sub))
   }
 
-  copyKitScripts(kitRoot, target)
+  copyKitScripts(kitRoot, target, { force })
 
   const kitDocs = existsSync(join(kitRoot, 'docs', 'agent-kit'))
     ? join(kitRoot, 'docs', 'agent-kit')

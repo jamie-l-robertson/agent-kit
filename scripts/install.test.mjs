@@ -170,3 +170,61 @@ test('install keep path logs AGENTS.md without overwrite', () => {
     rmSync(target, { recursive: true, force: true })
   }
 })
+
+test('install skips differing scripts unless force; writes kit-version', () => {
+  const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
+  try {
+    mkdirSync(join(target, 'scripts'), { recursive: true })
+    writeFileSync(
+      join(target, 'scripts', 'sync-tool-adapters.mjs'),
+      '// project custom\n',
+      'utf8',
+    )
+    installFrom(kitRoot, { force: false, kitLabel: 'test@ref', target })
+    assert.equal(
+      readFileSync(join(target, 'scripts', 'sync-tool-adapters.mjs'), 'utf8'),
+      '// project custom\n',
+    )
+    const ver = readFileSync(join(target, '.agents', '.kit-version'), 'utf8')
+    assert.match(ver, /test@ref/)
+    installFrom(kitRoot, { force: true, kitLabel: 'test@ref', target })
+    assert.notEqual(
+      readFileSync(join(target, 'scripts', 'sync-tool-adapters.mjs'), 'utf8'),
+      '// project custom\n',
+    )
+  } finally {
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('install Claude merge keeps sibling hooks and adds SessionStart', () => {
+  const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
+  try {
+    mkdirSync(join(target, '.claude'), { recursive: true })
+    writeFileSync(
+      join(target, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: 'Agent|Task',
+              hooks: [{ type: 'command', command: 'node sibling.mjs' }],
+            },
+          ],
+        },
+      }),
+      'utf8',
+    )
+    installFrom(kitRoot, { force: true, kitLabel: 'test', target })
+    const settings = JSON.parse(
+      readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
+    )
+    const pre = settings.hooks.PreToolUse.find((e) => e.matcher === 'Agent|Task')
+    const cmds = (pre?.hooks || []).map((h) => h.command)
+    assert.ok(cmds.includes('node sibling.mjs'))
+    assert.ok(cmds.some((c) => String(c).includes('claude.mjs')))
+    assert.ok(settings.hooks.SessionStart?.length)
+  } finally {
+    rmSync(target, { recursive: true, force: true })
+  }
+})

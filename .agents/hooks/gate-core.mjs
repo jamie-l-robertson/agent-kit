@@ -5,7 +5,8 @@
  * - manager may spawn workers + built-ins
  * - workers may not spawn any subagents (including each other)
  *
- * State: .agents/hooks/state/agent-roles.json (gitignored)
+ * State: .agents/hooks/state/agent-roles.json (gitignored), or AGENT_KIT_STATE_PATH.
+ * Shape: { sessions: { [sessionId]: { roles: { [agentId]: role } } } }
  *
  * Adapters normalize stdin payloads into a common shape and map decisions
  * back to Cursor / Claude hook JSON.
@@ -16,7 +17,15 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-export const STATE_PATH = join(__dirname, 'state', 'agent-roles.json')
+export const DEFAULT_STATE_PATH = join(__dirname, 'state', 'agent-roles.json')
+
+/** Resolved each call so tests can set AGENT_KIT_STATE_PATH before load/save. */
+export function getStatePath() {
+  return process.env.AGENT_KIT_STATE_PATH || DEFAULT_STATE_PATH
+}
+
+/** Default on-disk path (ignore AGENT_KIT_STATE_PATH). Prefer getStatePath(). */
+export const STATE_PATH = DEFAULT_STATE_PATH
 
 export const MANAGER = 'manager'
 export const WORKERS = new Set([
@@ -34,41 +43,81 @@ export const WORKERS = new Set([
 export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
 
 const ROOT_ROLE = 'root'
+const FALLBACK_SESSION = '_default'
 
 export function emptyState() {
-  return { roles: {} }
+  return { sessions: {} }
+}
+
+function migrateRaw(raw) {
+  if (raw?.sessions && typeof raw.sessions === 'object') {
+    return { sessions: raw.sessions }
+  }
+  // Legacy flat { roles } → single fallback session
+  if (raw?.roles && typeof raw.roles === 'object') {
+    return { sessions: { [FALLBACK_SESSION]: { roles: { ...raw.roles } } } }
+  }
+  return emptyState()
 }
 
 export function loadState() {
+  const path = getStatePath()
   try {
-    if (!existsSync(STATE_PATH)) return emptyState()
-    const raw = JSON.parse(readFileSync(STATE_PATH, 'utf8'))
-    return {
-      roles: raw?.roles && typeof raw.roles === 'object' ? raw.roles : {},
+    if (!existsSync(path)) return emptyState()
+    const raw = JSON.parse(readFileSync(path, 'utf8'))
+    const migrated = migrateRaw(raw)
+    const sessions = {}
+    for (const [sid, bucket] of Object.entries(migrated.sessions || {})) {
+      sessions[sid] = {
+        roles:
+          bucket?.roles && typeof bucket.roles === 'object'
+            ? { ...bucket.roles }
+            : {},
+      }
     }
+    return { sessions }
   } catch {
     return emptyState()
   }
 }
 
 export function saveState(state) {
-  mkdirSync(dirname(STATE_PATH), { recursive: true })
-  writeFileSync(STATE_PATH, `${JSON.stringify({ roles: state.roles }, null, 2)}\n`, 'utf8')
+  const path = getStatePath()
+  mkdirSync(dirname(path), { recursive: true })
+  const sessions = {}
+  for (const [sid, bucket] of Object.entries(state.sessions || {})) {
+    sessions[sid] = { roles: { ...(bucket.roles || {}) } }
+  }
+  writeFileSync(path, `${JSON.stringify({ sessions }, null, 2)}\n`, 'utf8')
 }
 
-export function rememberRole(state, id, role) {
+export function sessionIdOf(normalized) {
+  return normalized.sessionId || normalized.conversationId || FALLBACK_SESSION
+}
+
+export function ensureSession(state, sessionId) {
+  const id = sessionId || FALLBACK_SESSION
+  if (!state.sessions[id]) state.sessions[id] = { roles: {} }
+  return state.sessions[id]
+}
+
+export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {
   if (!id || !role) return
-  state.roles[id] = role
+  const bucket = ensureSession(state, sessionId)
+  bucket.roles[id] = role
 }
 
-export function clearRole(state, id) {
-  if (!id || !state.roles[id]) return
-  delete state.roles[id]
+export function clearRole(state, id, sessionId = FALLBACK_SESSION) {
+  if (!id) return
+  const bucket = state.sessions[sessionId]
+  if (!bucket?.roles?.[id]) return
+  delete bucket.roles[id]
 }
 
-export function callerRole(state, ids) {
+export function callerRole(state, ids, sessionId = FALLBACK_SESSION) {
+  const roles = ensureSession(state, sessionId).roles
   for (const id of ids) {
-    if (id && state.roles[id]) return state.roles[id]
+    if (id && roles[id]) return roles[id]
   }
   return ROOT_ROLE
 }
@@ -85,22 +134,22 @@ export function resolveEffectiveCaller(state, normalized) {
   const typed = normalized.callerAgentType
   if (WORKERS.has(typed) || typed === MANAGER) return typed
 
+  const sid = sessionIdOf(normalized)
+  const roles = ensureSession(state, sid).roles
+
   const parentOrCaller = [
     normalized.callerAgentId,
     normalized.parentConversationId,
   ].filter(Boolean)
 
   for (const id of parentOrCaller) {
-    if (state.roles[id]) return state.roles[id]
+    if (roles[id]) return roles[id]
   }
-  if (
-    normalized.conversationId &&
-    state.roles[normalized.conversationId]
-  ) {
-    return state.roles[normalized.conversationId]
+  if (normalized.conversationId && roles[normalized.conversationId]) {
+    return roles[normalized.conversationId]
   }
   if (parentOrCaller.length > 0) {
-    return Object.keys(state.roles).length === 0 ? ROOT_ROLE : 'unknown'
+    return Object.keys(roles).length === 0 ? ROOT_ROLE : 'unknown'
   }
   return ROOT_ROLE
 }
@@ -109,27 +158,47 @@ export function resolveEffectiveCaller(state, normalized) {
  * Normalize a tool-specific payload into:
  * {
  *   event: string,
- *   target: string,          // agent type being spawned
+ *   target: string,
  *   conversationId: string,
  *   parentConversationId: string,
  *   subagentId: string,
- *   callerAgentType: string, // Claude: agent_type of current caller when inside subagent
+ *   callerAgentType: string,
  *   callerAgentId: string,
+ *   sessionId: string,
+ *   toolCallId: string,
  * }
  */
 export function normalizeCursorPayload(payload) {
   const event = String(payload.hook_event_name || '')
   const target = extractCursorTaskType(payload)
+  const toolCallId = payload.tool_call_id ? String(payload.tool_call_id) : ''
+  const subagentId = payload.subagent_id
+    ? String(payload.subagent_id)
+    : toolCallId
+  // Prefer host session_id. sessionStart/End may only send conversation_id.
+  // Other events without session_id share FALLBACK_SESSION (document caveat).
+  let sessionId = payload.session_id ? String(payload.session_id) : ''
+  if (
+    !sessionId &&
+    (event === 'sessionStart' || event === 'sessionEnd') &&
+    payload.conversation_id
+  ) {
+    sessionId = String(payload.conversation_id)
+  }
   return {
     event,
     target,
     conversationId: payload.conversation_id || '',
     parentConversationId: payload.parent_conversation_id || '',
-    subagentId: payload.subagent_id || '',
+    subagentId,
+    toolCallId,
     callerAgentType: '',
     callerAgentId: '',
-    sessionId: payload.session_id || payload.conversation_id || '',
+    sessionId,
+    // Never stamp child role onto conversation_id (parent/session id)
     recordChild: true,
+    stampConversationId: false,
+    gateOnStart: true,
   }
 }
 
@@ -169,10 +238,13 @@ export function normalizeClaudePayload(payload) {
     conversationId: payload.session_id || '',
     parentConversationId: '',
     subagentId: payload.agent_id || '',
+    toolCallId: '',
     callerAgentType: String(payload.agent_type || ''),
     callerAgentId: String(payload.agent_id || ''),
     sessionId: payload.session_id || '',
     toolName,
+    stampConversationId: false,
+    gateOnStart: false,
   }
 
   if (event === 'SubagentStart' || event === 'SubagentStop') {
@@ -213,16 +285,27 @@ function isSubagentStop(event) {
   return event === 'subagentStop' || event === 'SubagentStop'
 }
 
-function recordAgentRole(state, normalized, role) {
-  const ids = [normalized.subagentId, normalized.conversationId].filter(Boolean)
-  for (const id of ids) rememberRole(state, id, role)
-  return ids
+function clearIds(normalized) {
+  return [normalized.subagentId, normalized.toolCallId].filter(Boolean)
 }
 
-function clearAgentRole(state, normalized) {
-  const ids = [normalized.subagentId, normalized.conversationId].filter(Boolean)
-  for (const id of ids) clearRole(state, id)
-  return ids
+function denyNestMessage(effectiveRole) {
+  const who =
+    effectiveRole === 'unknown'
+      ? 'unknown caller (parent/caller id not in role map)'
+      : `worker \`${effectiveRole}\``
+  return `Blocked: ${who} cannot spawn subagents. Return to manager with status: blocked (nesting/policy) — manager re-dispatches.`
+}
+
+function maybeDenySpawn(state, normalized) {
+  const effectiveRole = resolveEffectiveCaller(state, normalized)
+  if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
+    return {
+      action: 'deny',
+      message: denyNestMessage(effectiveRole),
+    }
+  }
+  return null
 }
 
 /**
@@ -231,14 +314,13 @@ function clearAgentRole(state, normalized) {
 export function decide(normalized) {
   const state = loadState()
   const event = normalized.event
+  const sid = sessionIdOf(normalized)
 
   if (isSessionStart(event)) {
-    const id =
-      normalized.sessionId ||
-      normalized.conversationId ||
-      normalized.subagentId
+    const id = sid === FALLBACK_SESSION ? '' : sid
     if (id) {
-      rememberRole(state, id, ROOT_ROLE)
+      ensureSession(state, id)
+      rememberRole(state, id, ROOT_ROLE, id)
       saveState(state)
     }
     return {
@@ -248,51 +330,65 @@ export function decide(normalized) {
   }
 
   if (isSessionEnd(event)) {
-    state.roles = {}
-    saveState(state)
-    return { action: 'noop', clearId: '*' }
+    if (state.sessions[sid]) {
+      delete state.sessions[sid]
+      saveState(state)
+    }
+    return { action: 'noop', clearId: sid }
   }
 
   if (isSubagentStop(event)) {
-    const cleared = clearAgentRole(state, normalized)
+    for (const id of clearIds(normalized)) {
+      clearRole(state, id, sid)
+    }
     saveState(state)
-    return { action: 'noop', clearId: cleared[0] || '' }
+    return { action: 'noop', clearId: normalized.subagentId || '' }
   }
 
-  // SubagentStart (Cursor/Claude) cannot block — record role mapping only
+  // SubagentStart — Cursor can deny; Claude records only (gateOnStart false)
   if (isSubagentStart(event)) {
+    if (normalized.gateOnStart) {
+      const denied = maybeDenySpawn(state, normalized)
+      if (denied) return denied
+    }
     const role = normalized.target
     const id = normalized.subagentId
     if (PROJECT_AGENTS.has(role) && id) {
-      recordAgentRole(state, normalized, role)
+      rememberRole(state, id, role, sid)
+      if (normalized.stampConversationId && normalized.conversationId) {
+        rememberRole(state, normalized.conversationId, role, sid)
+      }
       saveState(state)
     }
-    return { action: 'noop', record: id && role ? { id, role } : undefined }
+    if (normalized.gateOnStart) {
+      return {
+        action: 'allow',
+        record: id && role ? { id, role } : undefined,
+      }
+    }
+    return {
+      action: 'noop',
+      record: id && role ? { id, role } : undefined,
+    }
   }
 
   if (normalized.skipGate) {
     return { action: 'allow' }
   }
 
-  const effectiveRole = resolveEffectiveCaller(state, normalized)
-
-  if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
-    const who =
-      effectiveRole === 'unknown'
-        ? 'unknown caller (parent/caller id not in role map)'
-        : `worker \`${effectiveRole}\``
-    return {
-      action: 'deny',
-      message: `Blocked: ${who} cannot spawn subagents. Return to manager with status: blocked (nesting/policy) — manager re-dispatches.`,
-    }
-  }
+  const denied = maybeDenySpawn(state, normalized)
+  if (denied) return denied
 
   const target = normalized.target
   const subagentId = normalized.subagentId
-  if (normalized.recordChild !== false && PROJECT_AGENTS.has(target) && subagentId) {
-    rememberRole(state, subagentId, target)
-    if (normalized.conversationId) {
-      rememberRole(state, normalized.conversationId, target)
+  if (
+    normalized.recordChild !== false &&
+    PROJECT_AGENTS.has(target) &&
+    subagentId
+  ) {
+    rememberRole(state, subagentId, target, sid)
+    if (normalized.stampConversationId && normalized.conversationId) {
+      rememberRole(state, normalized.conversationId, target, sid)
     }
     saveState(state)
   }

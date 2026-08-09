@@ -111,7 +111,7 @@ Rules:
 - `out-of-scope` → `recommendNext` non-empty and not `"none"`
 - `needs-decision` → non-empty `needs`
 - When Success required verification commands → non-empty `evidence` and set `verificationResult` accordingly
-- Manager runs `node scripts/validate-worker-report.mjs --stdin` on suspect fences (kit script, not a project test suite)
+- Manager **always** runs `node scripts/validate-worker-report.mjs --stdin` on every fence (kit script, not a project test suite)
 
 ## Design system + standards (when defined)
 

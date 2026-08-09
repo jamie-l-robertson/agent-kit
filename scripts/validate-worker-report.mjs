@@ -24,6 +24,14 @@ const MODE = new Set(['audit-only', 'implement', 'verify-only', 'document'])
 const HUMAN = new Set(['required', 'granted', 'n/a'])
 const VERIFY = new Set(['pass', 'fail', 'n/a'])
 const AUDIT_FINDINGS_AGENTS = new Set(['reviewer', 'security', 'risk'])
+/** Agents that must report audit-only + empty changed on done */
+const READONLY_DONE_AGENTS = new Set([
+  'security',
+  'risk',
+  'reviewer',
+  'planner',
+  'manager',
+])
 const AUDIT_ONLY_AGENTS = new Set(['security', 'risk'])
 
 /** Schema required keys — kept in sync with worker-report.schema.json */
@@ -102,11 +110,12 @@ export function validateWorkerReport(report) {
   ) {
     errors.push('changed items must be strings')
   }
-  if (
-    report.recommendNext != null &&
-    typeof report.recommendNext !== 'string'
-  ) {
-    errors.push('recommendNext must be a string')
+  if (report.recommendNext != null) {
+    if (typeof report.recommendNext !== 'string') {
+      errors.push('recommendNext must be a string')
+    } else if (!report.recommendNext.trim()) {
+      errors.push('recommendNext must be non-empty (use "none" on done)')
+    }
   }
   if (report.humanApprove != null && !HUMAN.has(report.humanApprove)) {
     errors.push(`invalid humanApprove: ${report.humanApprove}`)
@@ -118,8 +127,28 @@ export function validateWorkerReport(report) {
     errors.push(`invalid verificationResult: ${report.verificationResult}`)
   }
 
+  if (
+    report.verificationResult === 'pass' ||
+    report.verificationResult === 'fail'
+  ) {
+    if (typeof report.evidence !== 'string' || !report.evidence.trim()) {
+      errors.push(
+        'verificationResult pass|fail requires non-empty evidence',
+      )
+    }
+  }
+
   if (report.status === 'done' && report.humanApprove === 'required') {
     errors.push('status done cannot have humanApprove required (use needs-decision)')
+  }
+
+  if (report.status === 'done') {
+    if (
+      typeof report.recommendNext === 'string' &&
+      !report.recommendNext.trim()
+    ) {
+      errors.push('recommendNext must be non-empty (use "none" on done)')
+    }
   }
 
   if (
@@ -132,13 +161,13 @@ export function validateWorkerReport(report) {
     }
   }
 
-  if (
-    report.status === 'done' &&
-    report.agent === 'planner' &&
-    Array.isArray(report.changed) &&
-    report.changed.length > 0
-  ) {
-    errors.push('planner done reports must have changed: []')
+  if (READONLY_DONE_AGENTS.has(report.agent) && report.status === 'done') {
+    if (report.mode !== 'audit-only') {
+      errors.push(`${report.agent} done reports must use mode: audit-only`)
+    }
+    if (Array.isArray(report.changed) && report.changed.length > 0) {
+      errors.push(`${report.agent} done reports must have changed: []`)
+    }
   }
 
   if (AUDIT_ONLY_AGENTS.has(report.agent) && report.status === 'done') {
@@ -147,6 +176,27 @@ export function validateWorkerReport(report) {
     }
     if (Array.isArray(report.changed) && report.changed.length > 0) {
       errors.push(`${report.agent} done reports must have changed: []`)
+    }
+  }
+
+  if (report.status === 'blocked') {
+    const needsOk =
+      typeof report.needs === 'string' && report.needs.trim()
+    const evidenceOk =
+      typeof report.evidence === 'string' && report.evidence.trim()
+    if (!needsOk && !evidenceOk) {
+      errors.push('blocked requires non-empty needs or evidence')
+    }
+  }
+
+  if (report.humanApprove === 'granted') {
+    if (
+      typeof report.approvedAction !== 'string' ||
+      !report.approvedAction.trim()
+    ) {
+      errors.push(
+        'humanApprove granted requires non-empty approvedAction (or "n/a")',
+      )
     }
   }
 
@@ -174,6 +224,12 @@ export function validateWorkerReport(report) {
   }
 
   return { ok: errors.length === 0, errors }
+}
+
+/** Schema agent.enum must match PROJECT_AGENTS (sorted). */
+export function schemaAgentEnum() {
+  const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))
+  return schema.properties?.agent?.enum || []
 }
 
 async function main() {

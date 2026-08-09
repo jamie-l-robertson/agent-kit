@@ -5,7 +5,9 @@ import {
   validateWorkerReport,
   SCHEMA_REQUIRED,
   loadSchemaRequired,
+  schemaAgentEnum,
 } from './validate-worker-report.mjs'
+import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
 
 const valid = {
   status: 'done',
@@ -16,6 +18,7 @@ const valid = {
   recommendNext: 'none',
   humanApprove: 'n/a',
   verificationResult: 'pass',
+  evidence: 'vitest: 3 passed',
 }
 
 test('schema required keys match validator', () => {
@@ -68,7 +71,7 @@ test('reviewer audit-only done requires findings', () => {
   )
 })
 
-test('planner done must have empty changed', () => {
+test('planner done must have empty changed and audit-only', () => {
   const r = validateWorkerReport({
     ...valid,
     agent: 'planner',
@@ -77,6 +80,90 @@ test('planner done must have empty changed', () => {
     verificationResult: 'n/a',
   })
   assert.equal(r.ok, false)
+})
+
+test('reviewer done must be audit-only', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'reviewer',
+      mode: 'implement',
+      changed: ['x'],
+      findings: 'x',
+      verificationResult: 'n/a',
+    }).ok,
+    false,
+  )
+})
+
+test('pass|fail requires evidence', () => {
+  assert.equal(
+    validateWorkerReport({ ...valid, evidence: '' }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      verificationResult: 'n/a',
+      evidence: null,
+    }).ok,
+    true,
+  )
+})
+
+test('blocked requires needs or evidence', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      status: 'blocked',
+      verificationResult: 'n/a',
+      evidence: null,
+      needs: null,
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      status: 'blocked',
+      verificationResult: 'n/a',
+      evidence: null,
+      needs: 'waiting on MCP',
+    }).ok,
+    true,
+  )
+})
+
+test('granted requires approvedAction', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      humanApprove: 'granted',
+      approvedAction: null,
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      humanApprove: 'granted',
+      approvedAction: 'n/a',
+    }).ok,
+    true,
+  )
+})
+
+test('recommendNext empty string invalid', () => {
+  assert.equal(
+    validateWorkerReport({ ...valid, recommendNext: '' }).ok,
+    false,
+  )
+})
+
+test('schema agent enum matches PROJECT_AGENTS', () => {
+  const fromSchema = [...schemaAgentEnum()].sort()
+  const fromGate = [...PROJECT_AGENTS].sort()
+  assert.deepEqual(fromSchema, fromGate)
 })
 
 test('security done must be audit-only with empty changed', () => {

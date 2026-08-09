@@ -5,7 +5,13 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import {
+  existsSync,
+  readFileSync,
+  mkdtempSync,
+  rmSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -14,7 +20,7 @@ import {
   normalizeClaudePayload,
   emptyState,
   saveState,
-  STATE_PATH,
+  DEFAULT_STATE_PATH,
   MANAGER,
   PROJECT_AGENTS,
 } from '../.agents/hooks/gate-core.mjs'
@@ -35,101 +41,146 @@ function run(cmd, args) {
   }
 }
 
-function resetGateState() {
-  saveState(emptyState())
+function withTempGateState(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-check-gate-'))
+  const prev = process.env.AGENT_KIT_STATE_PATH
+  process.env.AGENT_KIT_STATE_PATH = join(dir, 'agent-roles.json')
+  try {
+    saveState(emptyState())
+    fn()
+  } finally {
+    if (prev === undefined) delete process.env.AGENT_KIT_STATE_PATH
+    else process.env.AGENT_KIT_STATE_PATH = prev
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 function smokeCursorGate() {
-  resetGateState()
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      conversation_id: 'chk-root',
-      session_id: 'chk-root',
-    }),
-  )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      conversation_id: 'chk-mgr',
-      parent_conversation_id: 'chk-root',
-      subagent_id: 'chk-mgr-1',
-      subagent_type: 'manager',
-    }),
-  )
-  const allow = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      conversation_id: 'chk-mgr',
-      parent_conversation_id: 'chk-mgr-1',
-      subagent_id: 'chk-fe',
-      tool_input: { subagent_type: 'frontend' },
-    }),
-  )
-  if (allow.action !== 'allow') throw new Error('Cursor smoke: manager→frontend denied')
+  withTempGateState(() => {
+    const sid = 'chk-root'
+    decide(
+      normalizeCursorPayload({
+        hook_event_name: 'sessionStart',
+        conversation_id: sid,
+        session_id: sid,
+      }),
+    )
+    decide(
+      normalizeCursorPayload({
+        hook_event_name: 'subagentStart',
+        session_id: sid,
+        conversation_id: 'chk-mgr',
+        parent_conversation_id: sid,
+        subagent_id: 'chk-mgr-1',
+        subagent_type: 'manager',
+      }),
+    )
+    const allow = decide(
+      normalizeCursorPayload({
+        hook_event_name: 'preToolUse',
+        session_id: sid,
+        conversation_id: 'chk-mgr',
+        parent_conversation_id: 'chk-mgr-1',
+        subagent_id: 'chk-fe',
+        tool_input: { subagent_type: 'frontend' },
+      }),
+    )
+    if (allow.action !== 'allow') {
+      throw new Error('Cursor smoke: manager→frontend denied')
+    }
 
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      conversation_id: 'chk-fe',
-      parent_conversation_id: 'chk-mgr',
-      subagent_id: 'chk-fe',
-      subagent_type: 'frontend',
-    }),
-  )
-  const deny = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      conversation_id: 'chk-fe',
-      parent_conversation_id: 'chk-fe',
-      subagent_id: 'chk-be',
-      tool_input: { subagent_type: 'backend' },
-    }),
-  )
-  if (deny.action !== 'deny') throw new Error('Cursor smoke: worker nest not denied')
+    decide(
+      normalizeCursorPayload({
+        hook_event_name: 'subagentStart',
+        session_id: sid,
+        conversation_id: 'chk-fe',
+        parent_conversation_id: 'chk-mgr-1',
+        subagent_id: 'chk-fe',
+        subagent_type: 'frontend',
+      }),
+    )
+    const deny = decide(
+      normalizeCursorPayload({
+        hook_event_name: 'preToolUse',
+        session_id: sid,
+        conversation_id: 'chk-fe',
+        parent_conversation_id: 'chk-fe',
+        subagent_id: 'chk-be',
+        tool_input: { subagent_type: 'backend' },
+      }),
+    )
+    if (deny.action !== 'deny') {
+      throw new Error('Cursor smoke: worker nest not denied')
+    }
+    const denyStart = decide(
+      normalizeCursorPayload({
+        hook_event_name: 'subagentStart',
+        session_id: sid,
+        conversation_id: 'chk-be',
+        parent_conversation_id: 'chk-fe',
+        subagent_id: 'chk-be',
+        subagent_type: 'backend',
+      }),
+    )
+    if (denyStart.action !== 'deny') {
+      throw new Error('Cursor smoke: subagentStart nest not denied')
+    }
+  })
 }
 
 function smokeClaudeGate() {
-  resetGateState()
-  decide(
-    normalizeClaudePayload({
-      hook_event_name: 'SubagentStart',
-      agent_id: 'chk-mgr',
-      agent_type: 'manager',
-      session_id: 'chk-sess',
-    }),
-  )
-  const allow = decide(
-    normalizeClaudePayload({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Agent',
-      agent_id: 'chk-mgr',
-      agent_type: 'manager',
-      session_id: 'chk-sess',
-      tool_input: { subagent_type: 'frontend' },
-    }),
-  )
-  if (allow.action !== 'allow') throw new Error('Claude smoke: manager→frontend denied')
+  withTempGateState(() => {
+    const sid = 'chk-sess'
+    decide(
+      normalizeClaudePayload({
+        hook_event_name: 'SessionStart',
+        session_id: sid,
+      }),
+    )
+    decide(
+      normalizeClaudePayload({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'chk-mgr',
+        agent_type: 'manager',
+        session_id: sid,
+      }),
+    )
+    const allow = decide(
+      normalizeClaudePayload({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        agent_id: 'chk-mgr',
+        agent_type: 'manager',
+        session_id: sid,
+        tool_input: { subagent_type: 'frontend' },
+      }),
+    )
+    if (allow.action !== 'allow') {
+      throw new Error('Claude smoke: manager→frontend denied')
+    }
 
-  decide(
-    normalizeClaudePayload({
-      hook_event_name: 'SubagentStart',
-      agent_id: 'chk-fe',
-      agent_type: 'frontend',
-      session_id: 'chk-sess',
-    }),
-  )
-  const deny = decide(
-    normalizeClaudePayload({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Agent',
-      agent_id: 'chk-fe',
-      agent_type: 'frontend',
-      session_id: 'chk-sess',
-      tool_input: { subagent_type: 'backend' },
-    }),
-  )
-  if (deny.action !== 'deny') throw new Error('Claude smoke: worker nest not denied')
+    decide(
+      normalizeClaudePayload({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'chk-fe',
+        agent_type: 'frontend',
+        session_id: sid,
+      }),
+    )
+    const deny = decide(
+      normalizeClaudePayload({
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Agent',
+        agent_id: 'chk-fe',
+        agent_type: 'frontend',
+        session_id: sid,
+        tool_input: { subagent_type: 'backend' },
+      }),
+    )
+    if (deny.action !== 'deny') {
+      throw new Error('Claude smoke: worker nest not denied')
+    }
+  })
 }
 
 function smokeCopilotMarkers() {
@@ -142,8 +193,8 @@ function smokeCopilotMarkers() {
     if (!/No nesting|cannot spawn|Do not spawn/i.test(body)) {
       throw new Error(`Copilot ${name}: missing nesting forbid`)
     }
-    if (!/worker-report|humanApprove|"status"/i.test(body)) {
-      throw new Error(`Copilot ${name}: missing worker-report markers`)
+    if (!/```(?:json)?\s*\n[\s\S]*?"status"\s*:/.test(body)) {
+      throw new Error(`Copilot ${name}: missing worker-report fence shape`)
     }
   }
 }
@@ -177,6 +228,10 @@ function smokeValidator() {
 }
 
 function main() {
+  const defaultBefore = existsSync(DEFAULT_STATE_PATH)
+    ? readFileSync(DEFAULT_STATE_PATH, 'utf8')
+    : null
+
   const errors = []
   try {
     run(join(__dirname, 'sync-tool-adapters.mjs'), ['--check'])
@@ -209,11 +264,11 @@ function main() {
     errors.push(e instanceof Error ? e.message : String(e))
   }
 
-  // cleanup gate state from smoke
-  try {
-    saveState(emptyState())
-  } catch {
-    /* ignore */
+  const defaultAfter = existsSync(DEFAULT_STATE_PATH)
+    ? readFileSync(DEFAULT_STATE_PATH, 'utf8')
+    : null
+  if (defaultAfter !== defaultBefore) {
+    errors.push('DEFAULT_STATE_PATH was mutated by check-agent-kit')
   }
 
   if (errors.length) {
@@ -221,7 +276,9 @@ function main() {
     for (const e of errors) console.error(`  - ${e}`)
     process.exit(1)
   }
-  console.log('check-agent-kit OK (sync, skills, Cursor/Claude gate smoke, Copilot markers)')
+  console.log(
+    'check-agent-kit OK (sync, skills, Cursor/Claude gate smoke, Copilot markers, validator)',
+  )
 }
 
 const isMain =

@@ -149,7 +149,7 @@ Also verify/report:
 
 1. `.gitignore` ignores `.agents/hooks/state/` (and legacy `.cursor/hooks/state/` if present).
 2. Worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
-3. If you edited `.agents/` sources beyond setup fills, remind `node scripts/sync-tool-adapters.mjs` before commit.
+3. If you edited `.agents/` sources beyond setup fills, remind `node scripts/sync-tool-adapters.mjs` before commit, then **commit** both `.agents/` and generated `.cursor/`, `.claude/`, `.github/{agents,skills,instructions}/` (consumers should commit those trees after install too).
 4. Remind: Context7 / other **Required MCP** must be installable for prewarm.
 
 ## Done criteria

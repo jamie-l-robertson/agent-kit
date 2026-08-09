@@ -157,6 +157,75 @@
         "required": ["status", "mode", "verificationResult"]
       },
       "then": { "not": {} }
+    },
+    {
+      "if": {
+        "properties": {
+          "verificationResult": { "enum": ["pass", "fail"] }
+        },
+        "required": ["verificationResult"]
+      },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "blocked" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": ["needs"],
+            "properties": {
+              "needs": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "required": ["evidence"],
+            "properties": {
+              "evidence": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "humanApprove": { "const": "granted" }
+        },
+        "required": ["humanApprove"]
+      },
+      "then": {
+        "required": ["approvedAction"],
+        "properties": {
+          "approvedAction": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "enum": ["security", "risk", "reviewer", "planner", "manager"]
+          },
+          "status": { "const": "done" }
+        },
+        "required": ["agent", "status"]
+      },
+      "then": {
+        "properties": {
+          "mode": { "const": "audit-only" },
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
     }
   ]
 }

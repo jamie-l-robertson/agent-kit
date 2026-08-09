@@ -54,7 +54,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
    - Resolve model from `.agents/agents/<name>.md` only.
    - UI title: `<agent> [<model>]: <short task>`.
    - Host model pin when supported; unavailable pin → `inherit` + note.
-6. **Integrate** — Parse **JSON fence** (canonical). Pipe the fence through `node scripts/validate-worker-report.mjs --stdin` when the report looks wrong or before accepting `done`. Bounce on schema/bounce rules below. Prose is summary only. Host UI supplies agent id for resume (optional JSON `agentId`).
+6. **Integrate** — Parse **JSON fence** (canonical). **Always** pipe every fence through `node scripts/validate-worker-report.mjs --stdin` before accepting any status. Bounce on schema/bounce rules below. Prose is summary only. Host UI supplies agent id for resume (optional JSON `agentId`).
 7. **Decision loop** — user → paste into resume brief; `documenter` append may run in parallel. Cap two rounds.
 8. **Close** — final report.
 

@@ -34,7 +34,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Skills | `.cursor/skills/` (generated) | `.claude/skills/` | `.github/skills/` |
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
-| Call-graph gate (no worker nesting) | **hard** (hooks; `sessionStart` + fail-closed after root seed) | **hard** (hooks) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit`) |
+| Call-graph gate (no worker nesting) | **hard when lifecycle ids present; verify with `AGENT_KIT_GATE_LOG=1`** (hooks; session-scoped state; `subagentStart` + `preToolUse`) | **hard** (hooks; `SessionStart`/`SessionEnd` session-scoped) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit`) |
 | Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
 | Sync / install safety | Sync upserts kit agents/skills (`x-owner: agent-kit`); merges hooks. Install merges `.cursor/hooks.json` + `.claude/settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` | same | Upserts `.github/{agents,skills,instructions}` only — other `.github/` (e.g. workflows) preserved |
 | Health check | `node scripts/check-agent-kit.mjs` (adapters + Cursor/Claude gate smoke + Copilot markers + validator) | same | same |
@@ -106,7 +106,7 @@ Copy these paths from the kit into the **project root** (merge if a path already
 | `.github/agents/` | `.github/agents/` |
 | `.github/skills/` | `.github/skills/` |
 | `.github/instructions/` | `.github/instructions/` |
-| `scripts/` | `scripts/` (at least `install.*` + `sync-tool-adapters.mjs`) |
+| `scripts/*.mjs` + `scripts/*.sh` (skip `*.test.mjs`) | `scripts/` (at least `install.*` + `sync-tool-adapters.mjs`) |
 | `AGENTS.md` | `AGENTS.md` (only if the project has no stack card yet) |
 | `CLAUDE.md` | `CLAUDE.md` (Claude Code; skip if unused) |
 
@@ -123,7 +123,11 @@ cp -R "$KIT/.cursor" "$TARGET/"
 cp -R "$KIT/.claude" "$TARGET/"
 mkdir -p "$TARGET/.github" "$TARGET/scripts"
 cp -R "$KIT/.github/agents" "$KIT/.github/skills" "$KIT/.github/instructions" "$TARGET/.github/"
-cp "$KIT/scripts/"*.mjs "$KIT/scripts/"*.sh "$TARGET/scripts/"
+# copy runtime scripts only — do not copy *.test.mjs
+for f in "$KIT/scripts/"*.mjs "$KIT/scripts/"*.sh; do
+  case "$f" in *.test.mjs) continue ;; esac
+  cp "$f" "$TARGET/scripts/"
+done
 cp "$KIT/AGENTS.md" "$KIT/CLAUDE.md" "$TARGET/"
 # merge .gitignore by hand — do not overwrite the project’s existing file
 ```
@@ -153,6 +157,7 @@ node scripts/check-agent-kit.mjs
 
 - [ ] Run **setup** skill (or fill `AGENTS.md` by hand): stack, ownership, narrow commands, required env — setup runs skills inventory sync
 - [ ] If install kept `AGENTS.md` / `CLAUDE.md`: append missing kit sections (setup will offer copy-paste blocks); check `.agents/memory/install-audit.md`
+- [ ] **Commit** kit host trees in the kit repo and in consumer repos after install/sync: `.cursor/`, `.claude/`, `.github/{agents,skills,instructions}/` (edit only under `.agents/`, then sync). Do not switch to generate-only adapters — clone/install must work without a sync step.
 - [ ] Optional: pin agent `model:` in `.agents/agents/<name>.md` (kit default is all `inherit`) to slugs your host’s picker exposes, then sync adapters
 - [ ] Optional: **Design system** + **Frontend / Backend / API** + **Cloud/DevOps/Infrastructure/Security/Risk standards** (path or URL). URLs load via **MCP only**
 - [ ] Optional: **Cloud platform** (`aws` | `azure` | `gcp` | `multi` | `n/a`)
@@ -164,6 +169,7 @@ node scripts/check-agent-kit.mjs
 - [ ] Re-run `node scripts/sync-tool-adapters.mjs` after canonical edits; use `--check` for drift
 - [ ] After adding project skills: `node scripts/sync-project-skills.mjs` (or re-run setup)
 - [ ] Routing drills: `docs/agent-kit/routing-scenarios.md` + `node --test scripts/routing-scenarios.test.mjs`
+- [ ] Optional: capture real Cursor gate payloads with `AGENT_KIT_GATE_LOG=1` before treating the Cursor nest gate as unqualified hard
 
 ## Authoring (skills, rules, agents)
 

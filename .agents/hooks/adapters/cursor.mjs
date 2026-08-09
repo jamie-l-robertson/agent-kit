@@ -2,12 +2,18 @@
 /**
  * Cursor hook adapter for the call-graph gate.
  * Wire via .cursor/hooks.json → node .agents/hooks/adapters/cursor.mjs
+ *
+ * Set AGENT_KIT_GATE_LOG=1 to append normalized payloads + decisions under
+ * .agents/hooks/state/gate-log.jsonl (or next to AGENT_KIT_STATE_PATH).
  */
 
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import {
   readStdin,
   normalizeCursorPayload,
   decide,
+  getStatePath,
 } from '../gate-core.mjs'
 
 function deny(message, { includeAgentMessage = false } = {}) {
@@ -24,6 +30,32 @@ function noop() {
   process.stdout.write('{}\n')
 }
 
+function maybeLog(payload, normalized, result) {
+  if (process.env.AGENT_KIT_GATE_LOG !== '1') return
+  try {
+    const logPath = join(dirname(getStatePath()), 'gate-log.jsonl')
+    mkdirSync(dirname(logPath), { recursive: true })
+    appendFileSync(
+      logPath,
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        event: normalized.event,
+        sessionId: normalized.sessionId,
+        subagentId: normalized.subagentId,
+        toolCallId: normalized.toolCallId,
+        target: normalized.target,
+        parentConversationId: normalized.parentConversationId,
+        conversationId: normalized.conversationId,
+        action: result.action,
+        rawKeys: Object.keys(payload || {}),
+      })}\n`,
+      'utf8',
+    )
+  } catch {
+    /* ignore log failures */
+  }
+}
+
 const raw = await readStdin()
 let payload = {}
 try {
@@ -36,6 +68,7 @@ try {
 try {
   const normalized = normalizeCursorPayload(payload)
   const result = decide(normalized)
+  maybeLog(payload, normalized, result)
 
   if (result.action === 'noop') {
     noop()
@@ -43,7 +76,9 @@ try {
   }
   if (result.action === 'deny') {
     deny(result.message, {
-      includeAgentMessage: normalized.event === 'preToolUse',
+      includeAgentMessage:
+        normalized.event === 'preToolUse' ||
+        normalized.event === 'subagentStart',
     })
     process.exit(0)
   }

@@ -40,6 +40,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/hooks/adapters/claude.mjs"
+          }
+        ]
+      }
     ]
   }
 }

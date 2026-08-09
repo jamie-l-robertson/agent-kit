@@ -1,15 +1,15 @@
 # Address re-rate findings (+ host folders)
 
-**Status:** planned — pick up next session  
+**Status:** implemented (awaiting user commit/tag)  
 **Source plan:** Cursor plan `address_re-rate_findings`  
 **Context:** Post path-to-9–10 re-rate (~7.7 setup / ~7.8 agents). Prior canvas: `kit-rerate-post-910`.
 
 ## Todos
 
-- [ ] **gate-session** — Session-scoped gate state + `AGENT_KIT_STATE_PATH`; Cursor start deny / stop clear; Claude SessionStart; tests
-- [ ] **validator-hard** — Evidence on pass/fail; readonly agents; blocked/granted rules; manager always validate; schema drift test
-- [ ] **install-sync-ship** — Claude merge siblings; deeper `--check`; install script overwrite policy; skill delete by marker; kit-version; README Option C
-- [ ] **docs-adapters** — Document commit `.cursor/` / `.claude/` / `.github` adapters in kit+consumers; Cursor hard caveat; check-agent-kit messaging
+- [x] **gate-session** — Session-scoped gate state + `AGENT_KIT_STATE_PATH`; Cursor start deny / stop clear; Claude SessionStart; tests
+- [x] **validator-hard** — Evidence on pass/fail; readonly agents; blocked/granted rules; manager always validate; schema drift test
+- [x] **install-sync-ship** — Claude merge siblings; deeper `--check`; install script overwrite policy; skill delete by marker; kit-version; README Option C
+- [x] **docs-adapters** — Document commit `.cursor/` / `.claude/` / `.github` adapters in kit+consumers; Cursor hard caveat; check-agent-kit messaging
 
 ---
 

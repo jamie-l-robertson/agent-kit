@@ -285,11 +285,10 @@ function removeStaleKitSkills(destRoot, kitSkills) {
   for (const name of readdirSync(destRoot)) {
     const p = join(destRoot, name)
     if (!statSync(p).isDirectory()) continue
-    const isKitNamed = KNOWN_KIT_SKILL_NAMES.has(name)
-    const marked = skillHasKitOwnerMarker(p)
-    if ((isKitNamed || marked) && !kitSkills.has(name)) {
-      // Only delete kit-owned copies — never wipe unmarked project skills
-      if (marked || isKitNamed) rmSync(p, { recursive: true, force: true })
+    // Only delete when x-owner: agent-kit is present (never basename alone)
+    if (!skillHasKitOwnerMarker(p)) continue
+    if (!kitSkills.has(name)) {
+      rmSync(p, { recursive: true, force: true })
     }
   }
 }
@@ -494,20 +493,6 @@ function checkDrift() {
   }
 
   const kitSkills = listKitSkillNames()
-  for (const root of ['.cursor/skills', '.claude/skills', '.github/skills']) {
-    for (const name of kitSkills) {
-      const skillSrc = join(SKILLS_DIR, name)
-      if (!existsSync(skillSrc)) continue
-      for (const f of readdirSync(skillSrc)) {
-        const sp = join(skillSrc, f)
-        if (!statSync(sp).isFile()) continue
-        const dp = join(ROOT, root, name, f)
-        if (!existsSync(dp) || read(sp) !== read(dp)) {
-          mismatches.push(`drift ${root}/${name}/${f}`)
-        }
-      }
-    }
-  }
 
   const claudeMd = join(ROOT, 'CLAUDE.md')
   if (!existsSync(claudeMd)) {
@@ -524,10 +509,7 @@ function checkDrift() {
   } else {
     try {
       const doc = JSON.parse(read(cursorHooks))
-      const cmds = JSON.stringify(doc)
-      if (!cmds.includes('adapters/cursor.mjs')) {
-        mismatches.push('.cursor/hooks.json missing kit cursor gate command')
-      }
+      const gateCmd = 'adapters/cursor.mjs'
       for (const key of [
         'sessionStart',
         'sessionEnd',
@@ -535,8 +517,16 @@ function checkDrift() {
         'subagentStop',
         'preToolUse',
       ]) {
-        if (!doc.hooks?.[key]) {
+        const list = doc.hooks?.[key]
+        if (!Array.isArray(list) || list.length === 0) {
           mismatches.push(`.cursor/hooks.json missing hooks.${key}`)
+          continue
+        }
+        const hasGate = list.some((e) => String(e?.command || '').includes(gateCmd))
+        if (!hasGate) {
+          mismatches.push(
+            `.cursor/hooks.json hooks.${key} missing kit cursor gate command`,
+          )
         }
       }
     } catch (err) {
@@ -552,14 +542,56 @@ function checkDrift() {
   } else {
     try {
       const doc = JSON.parse(read(claudeSettings))
-      const blob = JSON.stringify(doc)
-      if (!blob.includes('adapters/claude.mjs')) {
-        mismatches.push('.claude/settings.json missing kit claude gate command')
+      const gateCmd = 'adapters/claude.mjs'
+      for (const key of [
+        'SessionStart',
+        'SessionEnd',
+        'SubagentStart',
+        'SubagentStop',
+        'PreToolUse',
+      ]) {
+        const list = doc.hooks?.[key]
+        if (!Array.isArray(list) || list.length === 0) {
+          mismatches.push(`.claude/settings.json missing hooks.${key}`)
+          continue
+        }
+        const flat = list.flatMap((e) => e?.hooks || [])
+        const hasGate = flat.some((h) =>
+          String(h?.command || '').includes(gateCmd),
+        )
+        if (!hasGate) {
+          mismatches.push(
+            `.claude/settings.json hooks.${key} missing kit claude gate command`,
+          )
+        }
       }
     } catch (err) {
       mismatches.push(
         `invalid .claude/settings.json: ${err instanceof Error ? err.message : String(err)}`,
       )
+    }
+  }
+
+  // Recursive skill file drift (including nested paths)
+  for (const root of ['.cursor/skills', '.claude/skills', '.github/skills']) {
+    for (const name of kitSkills) {
+      const skillSrc = join(SKILLS_DIR, name)
+      if (!existsSync(skillSrc)) continue
+      const walk = (rel) => {
+        const sp = rel ? join(skillSrc, rel) : skillSrc
+        if (!existsSync(sp)) return
+        if (statSync(sp).isDirectory()) {
+          for (const f of readdirSync(sp)) {
+            walk(rel ? join(rel, f) : f)
+          }
+          return
+        }
+        const dp = join(ROOT, root, name, rel)
+        if (!existsSync(dp) || read(sp) !== read(dp)) {
+          mismatches.push(`drift ${root}/${name}/${rel}`)
+        }
+      }
+      walk('')
     }
   }
 

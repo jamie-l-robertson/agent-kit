@@ -109,22 +109,35 @@ export function mergeClaudeSettings(root, { failOnInvalidJson = true } = {}) {
 
   const hooks = { ...(existing.hooks || {}) }
 
+  /**
+   * Merge kit command into matcher entry without dropping sibling foreign hooks.
+   */
   const mergeByCommand = (arr, matcher, command) => {
     const list = Array.isArray(arr) ? [...arr] : []
-    const kitEntry = matcher
-      ? { matcher, hooks: [{ type: 'command', command }] }
-      : { hooks: [{ type: 'command', command }] }
-    const idx = list.findIndex((e) => {
-      const cmds = (e.hooks || []).map((h) => h.command)
-      return (
-        cmds.includes(command) && (matcher ? e.matcher === matcher : !e.matcher)
+    const idx = list.findIndex((e) =>
+      matcher ? e?.matcher === matcher : !e?.matcher,
+    )
+    const kitHook = { type: 'command', command }
+    if (idx < 0) {
+      list.push(
+        matcher
+          ? { matcher, hooks: [kitHook] }
+          : { hooks: [kitHook] },
       )
-    })
-    if (idx >= 0) list[idx] = kitEntry
-    else list.push(kitEntry)
+      return list
+    }
+    const entry = { ...list[idx] }
+    const inner = Array.isArray(entry.hooks) ? [...entry.hooks] : []
+    const hIdx = inner.findIndex((h) => h?.command === command)
+    if (hIdx >= 0) inner[hIdx] = { ...inner[hIdx], ...kitHook }
+    else inner.push(kitHook)
+    entry.hooks = inner
+    if (matcher) entry.matcher = matcher
+    list[idx] = entry
     return list
   }
 
+  hooks.SessionStart = mergeByCommand(hooks.SessionStart, null, CLAUDE_GATE)
   hooks.PreToolUse = mergeByCommand(hooks.PreToolUse, 'Agent|Task', CLAUDE_GATE)
   hooks.SubagentStart = mergeByCommand(hooks.SubagentStart, null, CLAUDE_GATE)
   hooks.SubagentStop = mergeByCommand(hooks.SubagentStop, null, CLAUDE_GATE)
