@@ -24,6 +24,7 @@ import {
   normalizeClaudePayload,
   MANAGER,
   PROJECT_AGENTS,
+  FALLBACK_SESSION,
 } from '../.agents/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -286,7 +287,7 @@ test('corrupt state file loads as empty', () => {
   assert.deepEqual(s.sessions, {})
 })
 
-test('Cursor fixture: root → manager → worker → deny nest; stop clears; no conv stamp', () => {
+test('Cursor fixture: root → manager → worker → deny nest; stop clears; conv aliases', () => {
   const sid = 'root-conv'
   decide(
     normalizeCursorPayload({
@@ -308,7 +309,7 @@ test('Cursor fixture: root → manager → worker → deny nest; stop clears; no
     }),
   )
   assert.equal(rolesOf(sid)['mgr-1'], MANAGER)
-  assert.equal(rolesOf(sid)['mgr-conv'], undefined)
+  assert.equal(rolesOf(sid)['mgr-conv'], MANAGER)
 
   const allowFe = decide(
     normalizeCursorPayload({
@@ -327,13 +328,13 @@ test('Cursor fixture: root → manager → worker → deny nest; stop clears; no
       hook_event_name: 'subagentStart',
       session_id: sid,
       conversation_id: 'fe-conv',
-      parent_conversation_id: 'mgr-1',
+      parent_conversation_id: 'mgr-conv',
       subagent_id: 'fe-1',
       subagent_type: 'frontend',
     }),
   )
   assert.equal(rolesOf(sid)['fe-1'], 'frontend')
-  assert.equal(rolesOf(sid)['fe-conv'], undefined)
+  assert.equal(rolesOf(sid)['fe-conv'], 'frontend')
 
   const denyNest = decide(
     normalizeCursorPayload({
@@ -485,7 +486,113 @@ test('Copilot synced agents include nesting forbid + worker-report markers', () 
       /```(?:json)?\s*\n[\s\S]*?"status"\s*:/,
       `${name} fence shape`,
     )
+    assert.match(body, /evidence|verificationResult/, `${name} evidence contract`)
   }
   const mgr = readFileSync(join(agentsDir, 'manager.md'), 'utf8')
   assert.match(mgr, /worker-report|validate-worker-report|JSON fence/i)
+  assert.match(mgr, /implement done requires verificationResult pass|pass\+evidence|non-empty `evidence`/i)
+})
+
+test('resolveSessionId finds session via parent when session_id omitted', () => {
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'sessionStart',
+      session_id: 'S1',
+      conversation_id: 'S1',
+    }),
+  )
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: 'S1',
+      conversation_id: 'mgr-conv',
+      parent_conversation_id: 'S1',
+      subagent_id: 'mgr-1',
+      subagent_type: 'manager',
+    }),
+  )
+  // No session_id — resolve via parent mgr-1
+  const allow = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      conversation_id: 'fe-conv',
+      parent_conversation_id: 'mgr-1',
+      subagent_id: 'fe-1',
+      subagent_type: 'frontend',
+    }),
+  )
+  assert.equal(allow.action, 'allow')
+  assert.equal(rolesOf('S1')['fe-1'], 'frontend')
+  assert.equal(loadState().sessions[FALLBACK_SESSION], undefined)
+})
+
+test('conversation alias allows parent_conversation_id = mgr-conv', () => {
+  const sid = 'alias-root'
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'sessionStart',
+      session_id: sid,
+      conversation_id: sid,
+    }),
+  )
+  decide(
+    normalizeCursorPayload({
+      hook_event_name: 'subagentStart',
+      session_id: sid,
+      conversation_id: 'mgr-conv',
+      parent_conversation_id: sid,
+      subagent_id: 'mgr-1',
+      subagent_type: 'manager',
+    }),
+  )
+  const allow = decide(
+    normalizeCursorPayload({
+      hook_event_name: 'preToolUse',
+      session_id: sid,
+      conversation_id: 'fe-conv',
+      parent_conversation_id: 'mgr-conv',
+      subagent_id: 'fe-1',
+      tool_input: { subagent_type: 'frontend' },
+    }),
+  )
+  assert.equal(allow.action, 'allow')
+})
+
+test('concurrent decide calls do not corrupt state JSON', async () => {
+  decide({
+    event: 'sessionStart',
+    sessionId: 'conc',
+    conversationId: 'conc',
+    subagentId: '',
+    parentConversationId: '',
+    target: '',
+    callerAgentType: '',
+    callerAgentId: '',
+  })
+  const jobs = []
+  for (let i = 0; i < 8; i++) {
+    jobs.push(
+      Promise.resolve().then(() =>
+        decide({
+          event: 'subagentStart',
+          sessionId: 'conc',
+          conversationId: `c-${i}`,
+          parentConversationId: 'conc',
+          subagentId: `w-${i}`,
+          target: 'frontend',
+          callerAgentType: '',
+          callerAgentId: '',
+          gateOnStart: true,
+        }),
+      ),
+    )
+  }
+  await Promise.all(jobs)
+  const raw = readFileSync(getStatePath(), 'utf8')
+  assert.doesNotThrow(() => JSON.parse(raw))
+  const roles = rolesOf('conc')
+  assert.equal(roles.conc, 'root')
+  for (let i = 0; i < 8; i++) {
+    assert.equal(roles[`w-${i}`], 'frontend')
+  }
 })

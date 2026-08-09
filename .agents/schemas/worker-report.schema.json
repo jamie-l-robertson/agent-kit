@@ -151,12 +151,17 @@
       "if": {
         "properties": {
           "status": { "const": "done" },
-          "mode": { "const": "implement" },
-          "verificationResult": { "const": "fail" }
+          "mode": { "const": "implement" }
         },
-        "required": ["status", "mode", "verificationResult"]
+        "required": ["status", "mode"]
       },
-      "then": { "not": {} }
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "verificationResult": { "const": "pass" },
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
     },
     {
       "if": {

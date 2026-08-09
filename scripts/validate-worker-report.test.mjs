@@ -104,6 +104,8 @@ test('pass|fail requires evidence', () => {
   assert.equal(
     validateWorkerReport({
       ...valid,
+      mode: 'audit-only',
+      changed: [],
       verificationResult: 'n/a',
       evidence: null,
     }).ok,
@@ -224,14 +226,32 @@ test('needs-decision requires needs', () => {
   )
 })
 
-test('implement done + verificationResult fail is invalid', () => {
+test('implement done requires pass + evidence (1A)', () => {
   assert.equal(
     validateWorkerReport({
       ...valid,
       verificationResult: 'fail',
+      evidence: 'x',
     }).ok,
     false,
   )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      verificationResult: 'n/a',
+      evidence: null,
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      verificationResult: 'pass',
+      evidence: '',
+    }).ok,
+    false,
+  )
+  assert.equal(validateWorkerReport(valid).ok, true)
 })
 
 test('extractWorkerReportJson finds last matching fence', () => {

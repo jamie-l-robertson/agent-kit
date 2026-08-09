@@ -1,6 +1,6 @@
 # Address re-rate findings (+ host folders)
 
-**Status:** implemented (awaiting user commit/tag)  
+**Status:** implemented + almost-closer pass (1A / gate resolve+lock); commits are project-level  
 **Source plan:** Cursor plan `address_re-rate_findings`  
 **Context:** Post path-to-9–10 re-rate (~7.7 setup / ~7.8 agents). Prior canvas: `kit-rerate-post-910`.
 
@@ -104,3 +104,13 @@ node scripts/check-agent-kit.mjs
 ```
 
 Success: concurrent-session test green; check doesn’t clear live state; validator rejects pass-without-evidence + reviewer implement; README/adapters commit policy documented; sync `--check` still green with committed host trees.
+
+---
+
+## Almost-closer pass (post triple re-rate)
+
+- [x] **1A** — `implement` + `done` ⇒ `verificationResult: pass` + non-empty `evidence` (all hosts via shared validator + synced agents)
+- [x] **Gate** — `resolveSessionId` via parent/subagent; conversation aliases; exclusive state lock (Cursor + Claude)
+- [x] **Copilot** — same report contract in synced `.github/agents`; marker checks for evidence
+- [x] **Docs** — README multi-host matrix + Cursor gate-log capture; no setup commit/tag
+

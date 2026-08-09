@@ -79,8 +79,9 @@ Bounce / resume when:
 - `reviewer`/`security`/`risk` `done` + `audit-only` without non-empty `findings`
 - `security`/`risk` claim non-empty `changed` or `mode: implement`
 - Planner `done` with non-empty `changed`
-- `mode: implement` + `done` + `verificationResult: fail`
-- Success implied verification but `evidence` empty/missing after required runs
+- `mode: implement` + `done` without `verificationResult: pass` and non-empty `evidence` (`n/a` / `fail` / empty evidence are bounce)
+- `verificationResult` `pass`|`fail` with empty/missing `evidence`
+- `blocked` without `needs` or `evidence`; `humanApprove: granted` without `approvedAction`
 - MCP-dependent work with `mcpUsed` missing/`none` when calls were required
 - Frontend `done` without design-system / standards fields when those refs are real (put details in `notes`/`findings` as appropriate)
 - Schema/codegen Success without codegen note when `AGENTS.md` has a codegen command

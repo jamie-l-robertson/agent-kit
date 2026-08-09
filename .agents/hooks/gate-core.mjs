@@ -12,7 +12,15 @@
  * back to Cursor / Claude hook JSON.
  */
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  openSync,
+  closeSync,
+  unlinkSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -43,7 +51,10 @@ export const WORKERS = new Set([
 export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
 
 const ROOT_ROLE = 'root'
-const FALLBACK_SESSION = '_default'
+export const FALLBACK_SESSION = '_default'
+
+const LOCK_TIMEOUT_MS = 2000
+const LOCK_RETRY_MS = 15
 
 export function emptyState() {
   return { sessions: {} }
@@ -53,7 +64,6 @@ function migrateRaw(raw) {
   if (raw?.sessions && typeof raw.sessions === 'object') {
     return { sessions: raw.sessions }
   }
-  // Legacy flat { roles } → single fallback session
   if (raw?.roles && typeof raw.roles === 'object') {
     return { sessions: { [FALLBACK_SESSION]: { roles: { ...raw.roles } } } }
   }
@@ -91,8 +101,89 @@ export function saveState(state) {
   writeFileSync(path, `${JSON.stringify({ sessions }, null, 2)}\n`, 'utf8')
 }
 
+function lockPath() {
+  return `${getStatePath()}.lock`
+}
+
+function sleepSync(ms) {
+  const sab = new SharedArrayBuffer(4)
+  Atomics.wait(new Int32Array(sab), 0, 0, ms)
+}
+
+/**
+ * Exclusive lock around load→mutate→save (Cursor + Claude adapters share state).
+ */
+export function withStateLock(fn) {
+  const path = lockPath()
+  mkdirSync(dirname(getStatePath()), { recursive: true })
+  const start = Date.now()
+  let fd = null
+  while (fd == null) {
+    try {
+      fd = openSync(path, 'wx')
+    } catch (err) {
+      if (err && err.code !== 'EEXIST') throw err
+      if (Date.now() - start > LOCK_TIMEOUT_MS) {
+        try {
+          unlinkSync(path)
+        } catch {
+          /* ignore */
+        }
+        fd = openSync(path, 'wx')
+        break
+      }
+      sleepSync(LOCK_RETRY_MS)
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    try {
+      closeSync(fd)
+    } catch {
+      /* ignore */
+    }
+    try {
+      unlinkSync(path)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** Explicit session id only (no conversation fallback). */
 export function sessionIdOf(normalized) {
-  return normalized.sessionId || normalized.conversationId || FALLBACK_SESSION
+  return normalized.sessionId || FALLBACK_SESSION
+}
+
+/**
+ * Prefer explicit sessionId; else session that already maps parent/caller/subagent;
+ * else conversationId if it is already a session key; else _default.
+ */
+export function resolveSessionId(state, normalized) {
+  if (normalized.sessionId) return normalized.sessionId
+
+  const lookupIds = [
+    normalized.parentConversationId,
+    normalized.callerAgentId,
+    normalized.subagentId,
+  ].filter(Boolean)
+
+  for (const [sid, bucket] of Object.entries(state.sessions || {})) {
+    const roles = bucket?.roles || {}
+    for (const id of lookupIds) {
+      if (roles[id]) return sid
+    }
+  }
+
+  if (
+    normalized.conversationId &&
+    state.sessions?.[normalized.conversationId]
+  ) {
+    return normalized.conversationId
+  }
+
+  return FALLBACK_SESSION
 }
 
 export function ensureSession(state, sessionId) {
@@ -114,6 +205,24 @@ export function clearRole(state, id, sessionId = FALLBACK_SESSION) {
   delete bucket.roles[id]
 }
 
+/**
+ * Record child role; alias conversationId → role when it is not the session root.
+ */
+export function recordChildRole(state, sid, subagentId, role, conversationId) {
+  if (!subagentId || !role) return
+  rememberRole(state, subagentId, role, sid)
+  if (
+    !conversationId ||
+    conversationId === sid ||
+    conversationId === subagentId
+  ) {
+    return
+  }
+  const existing = state.sessions[sid]?.roles?.[conversationId]
+  if (existing === ROOT_ROLE) return
+  rememberRole(state, conversationId, role, sid)
+}
+
 export function callerRole(state, ids, sessionId = FALLBACK_SESSION) {
   const roles = ensureSession(state, sessionId).roles
   for (const id of ids) {
@@ -124,17 +233,12 @@ export function callerRole(state, ids, sessionId = FALLBACK_SESSION) {
 
 /**
  * Resolve effective caller role for spawn gating.
- * - Claude callerAgentType wins when it is manager/worker
- * - Mapped parent/caller/conversation ids → that role
- * - Unmapped parent/caller + empty role map → `root` (bootstrap; avoids deny-all)
- * - Unmapped parent/caller + non-empty map → `unknown` (fail closed)
- * - No parent/caller id → `root`
  */
 export function resolveEffectiveCaller(state, normalized) {
   const typed = normalized.callerAgentType
   if (WORKERS.has(typed) || typed === MANAGER) return typed
 
-  const sid = sessionIdOf(normalized)
+  const sid = resolveSessionId(state, normalized)
   const roles = ensureSession(state, sid).roles
 
   const parentOrCaller = [
@@ -154,20 +258,6 @@ export function resolveEffectiveCaller(state, normalized) {
   return ROOT_ROLE
 }
 
-/**
- * Normalize a tool-specific payload into:
- * {
- *   event: string,
- *   target: string,
- *   conversationId: string,
- *   parentConversationId: string,
- *   subagentId: string,
- *   callerAgentType: string,
- *   callerAgentId: string,
- *   sessionId: string,
- *   toolCallId: string,
- * }
- */
 export function normalizeCursorPayload(payload) {
   const event = String(payload.hook_event_name || '')
   const target = extractCursorTaskType(payload)
@@ -175,8 +265,6 @@ export function normalizeCursorPayload(payload) {
   const subagentId = payload.subagent_id
     ? String(payload.subagent_id)
     : toolCallId
-  // Prefer host session_id. sessionStart/End may only send conversation_id.
-  // Other events without session_id share FALLBACK_SESSION (document caveat).
   let sessionId = payload.session_id ? String(payload.session_id) : ''
   if (
     !sessionId &&
@@ -195,9 +283,7 @@ export function normalizeCursorPayload(payload) {
     callerAgentType: '',
     callerAgentId: '',
     sessionId,
-    // Never stamp child role onto conversation_id (parent/session id)
     recordChild: true,
-    stampConversationId: false,
     gateOnStart: true,
   }
 }
@@ -243,7 +329,6 @@ export function normalizeClaudePayload(payload) {
     callerAgentId: String(payload.agent_id || ''),
     sessionId: payload.session_id || '',
     toolName,
-    stampConversationId: false,
     gateOnStart: false,
   }
 
@@ -258,7 +343,6 @@ export function normalizeClaudePayload(payload) {
     }
     return {
       ...base,
-      // agent_id on PreToolUse is the caller, not the child — do not record
       subagentId: '',
       target: extractClaudeSpawnTarget(payload.tool_input),
       skipGate: false,
@@ -285,8 +369,15 @@ function isSubagentStop(event) {
   return event === 'subagentStop' || event === 'SubagentStop'
 }
 
-function clearIds(normalized) {
-  return [normalized.subagentId, normalized.toolCallId].filter(Boolean)
+function clearIds(normalized, sid) {
+  const ids = [normalized.subagentId, normalized.toolCallId]
+  if (
+    normalized.conversationId &&
+    normalized.conversationId !== sid
+  ) {
+    ids.push(normalized.conversationId)
+  }
+  return ids.filter(Boolean)
 }
 
 function denyNestMessage(effectiveRole) {
@@ -308,16 +399,15 @@ function maybeDenySpawn(state, normalized) {
   return null
 }
 
-/**
- * @returns {{ action: 'allow'|'deny'|'noop', message?: string, record?: { id: string, role: string }, clearId?: string }}
- */
-export function decide(normalized) {
+function decideUnlocked(normalized) {
   const state = loadState()
   const event = normalized.event
-  const sid = sessionIdOf(normalized)
 
   if (isSessionStart(event)) {
-    const id = sid === FALLBACK_SESSION ? '' : sid
+    const id =
+      normalized.sessionId ||
+      (normalized.conversationId && normalized.conversationId) ||
+      ''
     if (id) {
       ensureSession(state, id)
       rememberRole(state, id, ROOT_ROLE, id)
@@ -329,23 +419,25 @@ export function decide(normalized) {
     }
   }
 
+  const sid = resolveSessionId(state, normalized)
+
   if (isSessionEnd(event)) {
-    if (state.sessions[sid]) {
-      delete state.sessions[sid]
+    const endId = normalized.sessionId || normalized.conversationId || sid
+    if (state.sessions[endId]) {
+      delete state.sessions[endId]
       saveState(state)
     }
-    return { action: 'noop', clearId: sid }
+    return { action: 'noop', clearId: endId }
   }
 
   if (isSubagentStop(event)) {
-    for (const id of clearIds(normalized)) {
+    for (const id of clearIds(normalized, sid)) {
       clearRole(state, id, sid)
     }
     saveState(state)
     return { action: 'noop', clearId: normalized.subagentId || '' }
   }
 
-  // SubagentStart — Cursor can deny; Claude records only (gateOnStart false)
   if (isSubagentStart(event)) {
     if (normalized.gateOnStart) {
       const denied = maybeDenySpawn(state, normalized)
@@ -354,10 +446,8 @@ export function decide(normalized) {
     const role = normalized.target
     const id = normalized.subagentId
     if (PROJECT_AGENTS.has(role) && id) {
-      rememberRole(state, id, role, sid)
-      if (normalized.stampConversationId && normalized.conversationId) {
-        rememberRole(state, normalized.conversationId, role, sid)
-      }
+      // Alias conversationId here (child conv), not on preToolUse (caller conv)
+      recordChildRole(state, sid, id, role, normalized.conversationId)
       saveState(state)
     }
     if (normalized.gateOnStart) {
@@ -386,14 +476,19 @@ export function decide(normalized) {
     PROJECT_AGENTS.has(target) &&
     subagentId
   ) {
+    // preToolUse conversation_id is the caller — do not alias it to the child
     rememberRole(state, subagentId, target, sid)
-    if (normalized.stampConversationId && normalized.conversationId) {
-      rememberRole(state, normalized.conversationId, target, sid)
-    }
     saveState(state)
   }
 
   return { action: 'allow' }
+}
+
+/**
+ * @returns {{ action: 'allow'|'deny'|'noop', message?: string, record?: { id: string, role: string }, clearId?: string }}
+ */
+export function decide(normalized) {
+  return withStateLock(() => decideUnlocked(normalized))
 }
 
 export async function readStdin() {

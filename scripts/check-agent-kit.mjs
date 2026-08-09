@@ -196,6 +196,9 @@ function smokeCopilotMarkers() {
     if (!/```(?:json)?\s*\n[\s\S]*?"status"\s*:/.test(body)) {
       throw new Error(`Copilot ${name}: missing worker-report fence shape`)
     }
+    if (!/evidence|verificationResult/.test(body)) {
+      throw new Error(`Copilot ${name}: missing evidence/verificationResult contract`)
+    }
   }
 }
 
@@ -208,10 +211,24 @@ function smokeValidator() {
     changed: [],
     recommendNext: 'none',
     humanApprove: 'n/a',
-    verificationResult: 'n/a',
+    verificationResult: 'pass',
+    evidence: 'check-agent-kit smoke: ok',
   })
   if (!ok.ok) {
     throw new Error(`validator sample failed: ${ok.errors.join('; ')}`)
+  }
+  const na = validateWorkerReport({
+    status: 'done',
+    agent: 'frontend',
+    mode: 'implement',
+    goal: 'check',
+    changed: [],
+    recommendNext: 'none',
+    humanApprove: 'n/a',
+    verificationResult: 'n/a',
+  })
+  if (na.ok) {
+    throw new Error('validator should reject implement done with verificationResult n/a')
   }
   const bad = validateWorkerReport({
     status: 'done',

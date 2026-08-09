@@ -213,14 +213,15 @@ export function validateWorkerReport(report) {
     }
   }
 
-  if (
-    report.status === 'done' &&
-    report.mode === 'implement' &&
-    report.verificationResult === 'fail'
-  ) {
-    errors.push(
-      'implement done cannot have verificationResult fail (use needs-decision or fix)',
-    )
+  if (report.status === 'done' && report.mode === 'implement') {
+    if (report.verificationResult !== 'pass') {
+      errors.push(
+        'implement done requires verificationResult pass (use needs-decision or fix; n/a and fail are invalid)',
+      )
+    }
+    if (typeof report.evidence !== 'string' || !report.evidence.trim()) {
+      errors.push('implement done requires non-empty evidence')
+    }
   }
 
   return { ok: errors.length === 0, errors }
