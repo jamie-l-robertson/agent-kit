@@ -245,6 +245,11 @@ function smokeValidator() {
 }
 
 function main() {
+  const kitVersionPath = join(ROOT, '.agents', '.kit-version')
+  const kitVersion = existsSync(kitVersionPath)
+    ? readFileSync(kitVersionPath, 'utf8').trim()
+    : 'unknown'
+
   const defaultBefore = existsSync(DEFAULT_STATE_PATH)
     ? readFileSync(DEFAULT_STATE_PATH, 'utf8')
     : null
@@ -294,7 +299,7 @@ function main() {
     process.exit(1)
   }
   console.log(
-    'check-agent-kit OK (sync, skills, Cursor/Claude gate smoke, Copilot markers, validator)',
+    `check-agent-kit OK (kit ${kitVersion}; sync, skills, Cursor/Claude gate smoke, Copilot markers, validator)`,
   )
 }
 

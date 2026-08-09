@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { spawn } from 'node:child_process'
 import {
   DEFAULT_STATE_PATH,
   getStatePath,
@@ -25,6 +26,7 @@ import {
   MANAGER,
   PROJECT_AGENTS,
   FALLBACK_SESSION,
+  lockPath,
 } from '../.agents/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -33,11 +35,15 @@ let tmpStateDir = ''
 beforeEach(() => {
   tmpStateDir = mkdtempSync(join(tmpdir(), 'kit-gate-'))
   process.env.AGENT_KIT_STATE_PATH = join(tmpStateDir, 'agent-roles.json')
+  process.env.AGENT_KIT_RUN_EVENTS = '0'
   saveState(emptyState())
 })
 
 afterEach(() => {
   delete process.env.AGENT_KIT_STATE_PATH
+  delete process.env.AGENT_KIT_LOCK_TIMEOUT_MS
+  delete process.env.AGENT_KIT_RUN_EVENTS
+  delete process.env.AGENT_KIT_RUN_EVENTS_PATH
   if (tmpStateDir && existsSync(tmpStateDir)) {
     rmSync(tmpStateDir, { recursive: true, force: true })
   }
@@ -52,6 +58,16 @@ test('getStatePath honors AGENT_KIT_STATE_PATH', () => {
 })
 
 test('root may spawn manager', () => {
+  decide({
+    event: 'sessionStart',
+    sessionId: 's1',
+    conversationId: 's1',
+    subagentId: '',
+    parentConversationId: '',
+    target: '',
+    callerAgentType: '',
+    callerAgentId: '',
+  })
   const d = decide({
     event: 'preToolUse',
     target: MANAGER,
@@ -124,7 +140,7 @@ test('unknown parent id fails closed when role map is non-empty', () => {
   assert.match(d.message, /unknown/i)
 })
 
-test('unmapped parent with empty map bootstraps as root', () => {
+test('unmapped parent with empty map fails closed (no root invent)', () => {
   const d = decide({
     event: 'preToolUse',
     target: MANAGER,
@@ -136,16 +152,32 @@ test('unmapped parent with empty map bootstraps as root', () => {
     callerAgentId: '',
     recordChild: true,
   })
-  assert.equal(d.action, 'allow')
+  assert.equal(d.action, 'deny')
+  assert.match(d.message, /unknown/i)
 })
 
-test('resolveEffectiveCaller: empty parent is root', () => {
+test('resolveEffectiveCaller: empty parent without map is unknown', () => {
   assert.equal(
     resolveEffectiveCaller(emptyState(), {
       callerAgentType: '',
       callerAgentId: '',
       parentConversationId: '',
       conversationId: 'sess',
+      sessionId: 'sess',
+    }),
+    'unknown',
+  )
+})
+
+test('resolveEffectiveCaller: sessionId mapped to root allows', () => {
+  const state = emptyState()
+  rememberRole(state, 'sess', 'root', 'sess')
+  assert.equal(
+    resolveEffectiveCaller(state, {
+      callerAgentType: '',
+      callerAgentId: '',
+      parentConversationId: '',
+      conversationId: 'other',
       sessionId: 'sess',
     }),
     'root',
@@ -595,4 +627,132 @@ test('concurrent decide calls do not corrupt state JSON', async () => {
   for (let i = 0; i < 8; i++) {
     assert.equal(roles[`w-${i}`], 'frontend')
   }
+})
+
+test('withStateLock fail-closed on timeout (no steal)', () => {
+  process.env.AGENT_KIT_LOCK_TIMEOUT_MS = '80'
+  const path = lockPath()
+  mkdirSync(dirname(path), { recursive: true })
+  mkdirSync(path)
+  try {
+    assert.throws(
+      () =>
+        decide({
+          event: 'sessionStart',
+          sessionId: 'lock-t',
+          conversationId: 'lock-t',
+          subagentId: '',
+          parentConversationId: '',
+          target: '',
+          callerAgentType: '',
+          callerAgentId: '',
+        }),
+      /lock timeout|fail-closed/i,
+    )
+  } finally {
+    rmSync(path, { recursive: true, force: true })
+  }
+})
+
+test('multiprocess decide under shared lock does not corrupt JSON', async () => {
+  const statePath = process.env.AGENT_KIT_STATE_PATH
+  decide({
+    event: 'sessionStart',
+    sessionId: 'mp',
+    conversationId: 'mp',
+    subagentId: '',
+    parentConversationId: '',
+    target: '',
+    callerAgentType: '',
+    callerAgentId: '',
+  })
+  const worker = `
+import { decide } from ${JSON.stringify(join(root, '.agents/hooks/gate-core.mjs'))};
+process.env.AGENT_KIT_STATE_PATH = ${JSON.stringify(statePath)};
+process.env.AGENT_KIT_RUN_EVENTS = '0';
+const i = process.argv[2];
+decide({
+  event: 'subagentStart',
+  sessionId: 'mp',
+  conversationId: 'c-' + i,
+  parentConversationId: 'mp',
+  subagentId: 'w-' + i,
+  target: 'frontend',
+  callerAgentType: '',
+  callerAgentId: '',
+  gateOnStart: true,
+});
+`
+  const scriptPath = join(tmpStateDir, 'mp-worker.mjs')
+  writeFileSync(scriptPath, worker, 'utf8')
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [scriptPath, String(i)], {
+          env: {
+            ...process.env,
+            AGENT_KIT_STATE_PATH: statePath,
+            AGENT_KIT_RUN_EVENTS: '0',
+          },
+        })
+        let err = ''
+        child.stderr.on('data', (c) => {
+          err += c
+        })
+        child.on('exit', (code) => {
+          if (code === 0) resolve()
+          else reject(new Error(`worker ${i} exited ${code}: ${err}`))
+        })
+      }),
+    ),
+  )
+  const raw = readFileSync(getStatePath(), 'utf8')
+  assert.doesNotThrow(() => JSON.parse(raw))
+  const roles = rolesOf('mp')
+  assert.equal(roles.mp, 'root')
+  for (let i = 0; i < 8; i++) {
+    assert.equal(roles[`w-${i}`], 'frontend')
+  }
+})
+
+test('nest deny appends run event when enabled', () => {
+  delete process.env.AGENT_KIT_RUN_EVENTS
+  process.env.AGENT_KIT_RUN_EVENTS_PATH = join(tmpStateDir, 'events.jsonl')
+  const st = emptyState()
+  rememberRole(st, 'ev', 'root', 'ev')
+  rememberRole(st, 'fe-1', 'frontend', 'ev')
+  saveState(st)
+  const d = decide({
+    event: 'subagentStart',
+    sessionId: 'ev',
+    conversationId: 'c',
+    parentConversationId: 'fe-1',
+    subagentId: 'be-1',
+    target: 'backend',
+    callerAgentType: '',
+    callerAgentId: '',
+    gateOnStart: true,
+  })
+  assert.equal(d.action, 'deny')
+  const lines = readFileSync(process.env.AGENT_KIT_RUN_EVENTS_PATH, 'utf8')
+    .trim()
+    .split('\n')
+  const last = JSON.parse(lines.at(-1))
+  assert.equal(last.event, 'deny')
+  assert.equal(last.agent, 'backend')
+})
+
+test('spawn with no session identity fails closed to _default', () => {
+  const d = decide({
+    event: 'subagentStart',
+    sessionId: '',
+    conversationId: '',
+    parentConversationId: '',
+    subagentId: 'x',
+    target: 'frontend',
+    callerAgentType: '',
+    callerAgentId: '',
+    gateOnStart: true,
+  })
+  assert.equal(d.action, 'deny')
 })

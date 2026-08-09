@@ -224,7 +224,33 @@ export function validateWorkerReport(report) {
     }
   }
 
+  // verify-only / document must not smuggle product edits via changed[]
+  if (report.mode === 'verify-only') {
+    if (Array.isArray(report.changed) && report.changed.length > 0) {
+      errors.push('verify-only requires changed: []')
+    }
+  }
+  if (report.mode === 'document' && Array.isArray(report.changed)) {
+    for (const p of report.changed) {
+      if (typeof p !== 'string' || !isDocumentWritablePath(p)) {
+        errors.push(
+          `document changed path not allowed (docs/memory only): ${p}`,
+        )
+      }
+    }
+  }
+
   return { ok: errors.length === 0, errors }
+}
+
+/** Paths document mode may list in changed (docs / agent memory / stack cards). */
+export function isDocumentWritablePath(p) {
+  if (typeof p !== 'string' || !p.trim()) return false
+  if (p === 'AGENTS.md' || p === 'CLAUDE.md' || p === 'README.md') return true
+  if (p.startsWith('docs/')) return true
+  if (p.startsWith('.agents/memory/')) return true
+  if (p.startsWith('.agents/') && p.endsWith('.md')) return true
+  return false
 }
 
 /** Schema agent.enum must match PROJECT_AGENTS (sorted). */

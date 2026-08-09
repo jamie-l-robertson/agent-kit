@@ -231,6 +231,19 @@
           "changed": { "type": "array", "maxItems": 0 }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "verify-only" }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
     }
   ]
 }

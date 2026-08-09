@@ -17,9 +17,10 @@ import {
   readFileSync,
   writeFileSync,
   existsSync,
-  openSync,
-  closeSync,
-  unlinkSync,
+  appendFileSync,
+  statSync,
+  rmSync,
+  renameSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -53,8 +54,15 @@ export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
 const ROOT_ROLE = 'root'
 export const FALLBACK_SESSION = '_default'
 
-const LOCK_TIMEOUT_MS = 2000
+const DEFAULT_LOCK_TIMEOUT_MS = 2000
 const LOCK_RETRY_MS = 15
+
+export function lockTimeoutMs() {
+  const raw = process.env.AGENT_KIT_LOCK_TIMEOUT_MS
+  if (raw == null || raw === '') return DEFAULT_LOCK_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_LOCK_TIMEOUT_MS
+}
 
 export function emptyState() {
   return { sessions: {} }
@@ -98,11 +106,13 @@ export function saveState(state) {
   for (const [sid, bucket] of Object.entries(state.sessions || {})) {
     sessions[sid] = { roles: { ...(bucket.roles || {}) } }
   }
-  writeFileSync(path, `${JSON.stringify({ sessions }, null, 2)}\n`, 'utf8')
+  const tmp = `${path}.${process.pid}.tmp`
+  writeFileSync(tmp, `${JSON.stringify({ sessions }, null, 2)}\n`, 'utf8')
+  renameSync(tmp, path)
 }
 
-function lockPath() {
-  return `${getStatePath()}.lock`
+export function lockPath() {
+  return `${getStatePath()}.lockdir`
 }
 
 function sleepSync(ms) {
@@ -112,25 +122,31 @@ function sleepSync(ms) {
 
 /**
  * Exclusive lock around load→mutate→save (Cursor + Claude adapters share state).
+ * Uses mkdir (atomic) rather than open(wx). Fail-closed on timeout — does not steal.
  */
 export function withStateLock(fn) {
   const path = lockPath()
   mkdirSync(dirname(getStatePath()), { recursive: true })
   const start = Date.now()
-  let fd = null
-  while (fd == null) {
+  const timeout = lockTimeoutMs()
+  let held = false
+  while (!held) {
     try {
-      fd = openSync(path, 'wx')
+      mkdirSync(path)
+      held = true
     } catch (err) {
       if (err && err.code !== 'EEXIST') throw err
-      if (Date.now() - start > LOCK_TIMEOUT_MS) {
+      if (Date.now() - start > timeout) {
+        let staleHint = ''
         try {
-          unlinkSync(path)
+          const st = statSync(path)
+          staleHint = ` lock_mtime_age_ms=${Date.now() - st.mtimeMs}`
         } catch {
           /* ignore */
         }
-        fd = openSync(path, 'wx')
-        break
+        throw new Error(
+          `agent-kit gate: state lock timeout after ${timeout}ms (fail-closed; remove orphan ${path} if stuck).${staleHint}`,
+        )
       }
       sleepSync(LOCK_RETRY_MS)
     }
@@ -139,12 +155,51 @@ export function withStateLock(fn) {
     return fn()
   } finally {
     try {
-      closeSync(fd)
+      rmSync(path, { recursive: true, force: true })
     } catch {
       /* ignore */
     }
+  }
+}
+
+/** JSONL path for structured run events (gitignored). */
+export function getRunEventsPath(date = new Date()) {
+  if (process.env.AGENT_KIT_RUN_EVENTS_PATH) {
+    return process.env.AGENT_KIT_RUN_EVENTS_PATH
+  }
+  const day = date.toISOString().slice(0, 10)
+  if (process.env.AGENT_KIT_STATE_PATH) {
+    return join(dirname(getStatePath()), 'runs', `${day}.jsonl`)
+  }
+  // .agents/hooks/state → .agents/memory/runs
+  return join(__dirname, '..', 'memory', 'runs', `${day}.jsonl`)
+}
+
+/**
+ * Append one run event. Optional AGENT_KIT_TELEMETRY_URL POST (best-effort, no throw).
+ */
+export function appendRunEvent(event) {
+  if (process.env.AGENT_KIT_RUN_EVENTS === '0') return
+  const row = {
+    ts: new Date().toISOString(),
+    ...event,
+  }
+  try {
+    const path = getRunEventsPath()
+    mkdirSync(dirname(path), { recursive: true })
+    appendFileSync(path, `${JSON.stringify(row)}\n`, 'utf8')
+  } catch {
+    /* ignore */
+  }
+  const url = process.env.AGENT_KIT_TELEMETRY_URL
+  if (url) {
     try {
-      unlinkSync(path)
+      // Fire-and-forget; ignore result (Node 18+ fetch)
+      void fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(row),
+      }).catch(() => {})
     } catch {
       /* ignore */
     }
@@ -237,6 +292,7 @@ export function callerRole(state, ids, sessionId = FALLBACK_SESSION) {
 export function resolveEffectiveCaller(state, normalized) {
   const typed = normalized.callerAgentType
   if (WORKERS.has(typed) || typed === MANAGER) return typed
+  if (typed === ROOT_ROLE || typed === 'root') return ROOT_ROLE
 
   const sid = resolveSessionId(state, normalized)
   const roles = ensureSession(state, sid).roles
@@ -249,13 +305,26 @@ export function resolveEffectiveCaller(state, normalized) {
   for (const id of parentOrCaller) {
     if (roles[id]) return roles[id]
   }
+  if (normalized.sessionId && roles[normalized.sessionId]) {
+    return roles[normalized.sessionId]
+  }
   if (normalized.conversationId && roles[normalized.conversationId]) {
     return roles[normalized.conversationId]
   }
-  if (parentOrCaller.length > 0) {
-    return Object.keys(roles).length === 0 ? ROOT_ROLE : 'unknown'
-  }
-  return ROOT_ROLE
+  // Fail-closed: do not invent root when caller identity is missing/unmapped
+  return 'unknown'
+}
+
+function emitSpawnDecision(normalized, result, sessionId, callerRoleName) {
+  if (result.action !== 'allow' && result.action !== 'deny') return
+  appendRunEvent({
+    event: result.action === 'deny' ? 'deny' : 'allow',
+    sessionId: sessionId || FALLBACK_SESSION,
+    role: callerRoleName || null,
+    agent: normalized.target || null,
+    status: result.action,
+    hookEvent: normalized.event || null,
+  })
 }
 
 export function normalizeCursorPayload(payload) {
@@ -440,8 +509,12 @@ function decideUnlocked(normalized) {
 
   if (isSubagentStart(event)) {
     if (normalized.gateOnStart) {
+      const effectiveRole = resolveEffectiveCaller(state, normalized)
       const denied = maybeDenySpawn(state, normalized)
-      if (denied) return denied
+      if (denied) {
+        emitSpawnDecision(normalized, denied, sid, effectiveRole)
+        return denied
+      }
     }
     const role = normalized.target
     const id = normalized.subagentId
@@ -451,10 +524,17 @@ function decideUnlocked(normalized) {
       saveState(state)
     }
     if (normalized.gateOnStart) {
-      return {
+      const allowed = {
         action: 'allow',
         record: id && role ? { id, role } : undefined,
       }
+      emitSpawnDecision(
+        normalized,
+        allowed,
+        sid,
+        resolveEffectiveCaller(state, normalized),
+      )
+      return allowed
     }
     return {
       action: 'noop',
@@ -466,8 +546,12 @@ function decideUnlocked(normalized) {
     return { action: 'allow' }
   }
 
+  const effectiveRole = resolveEffectiveCaller(state, normalized)
   const denied = maybeDenySpawn(state, normalized)
-  if (denied) return denied
+  if (denied) {
+    emitSpawnDecision(normalized, denied, sid, effectiveRole)
+    return denied
+  }
 
   const target = normalized.target
   const subagentId = normalized.subagentId
@@ -481,7 +565,9 @@ function decideUnlocked(normalized) {
     saveState(state)
   }
 
-  return { action: 'allow' }
+  const allowed = { action: 'allow' }
+  emitSpawnDecision(normalized, allowed, sid, effectiveRole)
+  return allowed
 }
 
 /**

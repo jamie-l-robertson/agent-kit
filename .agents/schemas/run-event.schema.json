@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cursor-agent-kit.local/schemas/run-event.schema.json",
+  "title": "AgentKitRunEvent",
+  "description": "One JSONL line under .agents/memory/runs/<date>.jsonl (or AGENT_KIT_RUN_EVENTS_PATH)",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ts", "event"],
+  "properties": {
+    "ts": { "type": "string", "minLength": 1 },
+    "event": {
+      "type": "string",
+      "enum": ["dispatch", "report", "bounce", "deny", "allow", "close"]
+    },
+    "sessionId": { "type": ["string", "null"] },
+    "role": { "type": ["string", "null"] },
+    "agent": { "type": ["string", "null"] },
+    "status": { "type": ["string", "null"] },
+    "hookEvent": { "type": ["string", "null"] },
+    "validatorOk": { "type": ["boolean", "null"] }
+  }
+}

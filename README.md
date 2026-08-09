@@ -34,7 +34,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Skills | `.cursor/skills/` (generated) | `.claude/skills/` | `.github/skills/` |
 | Always-on rules | `.cursor/rules/*.mdc` | `CLAUDE.md` + `.agents/rules/` | `.github/instructions/` |
 | Decision memory | `.agents/memory/` | `.agents/memory/` | `.agents/memory/` |
-| Call-graph gate (no worker nesting) | **hard when lifecycle ids present; verify with `AGENT_KIT_GATE_LOG=1`** (hooks; session-scoped + file lock; `subagentStart` + `preToolUse`; parent/conversation aliases) | **hard** (hooks; `SessionStart`/`SessionEnd`; same session-scoped state + file lock) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit` — same worker-report rules) |
+| Call-graph gate (no worker nesting) | **hard when lifecycle ids present; verify with `AGENT_KIT_GATE_LOG=1`** (hooks; session-scoped + mkdir lock fail-closed; `subagentStart` + `preToolUse`; unmapped caller → deny; see `docs/agent-kit/maturity.md`) | **hard** (hooks; `SessionStart`/`SessionEnd`; same session-scoped state + fail-closed lock) | **soft** (prompt + synced agent text; CI markers via `check-agent-kit` — same worker-report rules) |
 | Readonly agents (no file writes) | `readonly: true` frontmatter (hard) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) | **soft** (prompt only) |
 | Sync / install safety | Sync upserts kit agents/skills (`x-owner: agent-kit`); merges hooks. Install merges `.cursor/hooks.json` + `.claude/settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` | same | Upserts `.github/{agents,skills,instructions}` only — other `.github/` (e.g. workflows) preserved |
 | Health check | `node scripts/check-agent-kit.mjs` (adapters + Cursor/Claude gate smoke + Copilot markers + validator) | same | same |
@@ -146,7 +146,8 @@ node scripts/sync-tool-adapters.mjs
 node scripts/check-agent-kit.mjs
 ```
 
-5. **Cursor gate payload capture** (optional): set `AGENT_KIT_GATE_LOG=1` in the environment that runs Cursor hooks. Normalized events append to `.agents/hooks/state/gate-log.jsonl` (or next to `AGENT_KIT_STATE_PATH`). Use a real nest attempt to confirm `session_id` / parent ids before treating the Cursor nest gate as unqualified hard. Claude already uses stable `session_id`; Copilot has no hard gate.
+5. **Cursor gate payload capture** (required before claiming unqualified hard): set `AGENT_KIT_GATE_LOG=1`, run a real nest attempt, record findings in [`docs/agent-kit/maturity.md`](docs/agent-kit/maturity.md). Normalized events append to `.agents/hooks/state/gate-log.jsonl` (or next to `AGENT_KIT_STATE_PATH`). Gate also appends structured deny/allow lines under `.agents/memory/runs/` (gitignored; `AGENT_KIT_RUN_EVENTS=0` to disable). Claude already uses stable `session_id`; Copilot has no hard gate.
+6. **Kit version**: `.agents/.kit-version` is printed by `check-agent-kit`. Cutting a release **tag** is a deliberate project action (ask before commit/tag); pin installs with `AGENT_KIT_REF=<tag>`.
 
 ## How to use
 

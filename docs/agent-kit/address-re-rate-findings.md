@@ -114,3 +114,7 @@ Success: concurrent-session test green; check doesn’t clear live state; valida
 - [x] **Copilot** — same report contract in synced `.github/agents`; marker checks for evidence
 - [x] **Docs** — README multi-host matrix + Cursor gate-log capture; no setup commit/tag
 
+### Still open after almost-closer → addressed in kit 0.2.0
+
+See [`maturity.md`](maturity.md) + [`CHANGELOG.md`](CHANGELOG.md). Code: validator verify-only/document paths; lock fail-closed (mkdir); multiprocess test; no invent-root; run-event JSONL. **Still ops:** real Cursor gate-log capture (fill maturity checklist); user-approved git **tag**.
+

@@ -265,3 +265,51 @@ Status: done
   assert.equal(report.agent, 'reviewer')
   assert.equal(validateWorkerReport(report).ok, true)
 })
+
+test('verify-only requires changed: []', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      mode: 'verify-only',
+      changed: ['src/Button.tsx'],
+      verificationResult: 'pass',
+      evidence: 'vitest: 3 passed',
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      mode: 'verify-only',
+      changed: [],
+      verificationResult: 'pass',
+      evidence: 'vitest: 3 passed',
+    }).ok,
+    true,
+  )
+})
+
+test('document rejects product paths in changed', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'documenter',
+      mode: 'document',
+      changed: ['src/Button.tsx'],
+      verificationResult: 'n/a',
+      evidence: null,
+    }).ok,
+    false,
+  )
+  assert.equal(
+    validateWorkerReport({
+      ...valid,
+      agent: 'documenter',
+      mode: 'document',
+      changed: ['.agents/memory/decisions.md', 'docs/agent-kit/notes.md'],
+      verificationResult: 'n/a',
+      evidence: null,
+    }).ok,
+    true,
+  )
+})
