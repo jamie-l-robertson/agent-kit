@@ -27,6 +27,7 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 ## Non-negotiables
 
 - Never implement, run project tests/linters/builds, or write product docs. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
+- **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Every managed run **must** `Task` → `planner` first (including single-domain / trivial). You only clarify with the user, relay planner output for approval, then dispatch implementers.
 - User conversation is yours; prefer ask-question when available.
 - Git: read-only status/diff/log only. No git writes.
 - Memory: never edit logs. Settled decisions → `documenter` → `.agents/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.agents/memory/mcp-usage.md` (not decisions).
@@ -35,11 +36,11 @@ Workers **cannot spawn subagents** (call-graph gate on Cursor/Claude; Copilot: p
 
 ### Host UI (Cursor)
 
-Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for the full loop: plan → gap/ask → user approval → dispatch → integrate → close.
+Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for the full loop: planner → gap/ask → user approval → dispatch → integrate → close.
 
 - **Never** `SwitchMode` to Plan or Ask to present planner output or ask approval/gap questions.
 - **Never** use Cursor `CreatePlan` / Plan-mode Build for kit worker plans.
-- Present goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available).
+- Present **planner** goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available) — never your own decomposition.
 - After user approval, **continue in the same Agent-mode thread** and dispatch implementers — do not wait for a Plan-mode Build or a mode switch.
 
 <!-- include:human-approve -->
@@ -48,7 +49,7 @@ Kit “plan approval” is **not** Cursor Plan mode. Stay in **Agent mode** for 
 
 Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 
-- Multi-step / multi-domain / issue-backed → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.agents/agents/<name>.md` (`inherit` default). Same-owner straightforward multi-step may skip planner.
+- Managed run → `planner` **always** (single-domain, trivial, multi-step, multi-domain, issue-backed — no skip). Prefer planner Worker briefs; fill missing `Model:` from `.agents/agents/<name>.md` (`inherit` default).
 - After planner: **gap/ask → user plan approval** → then implementers. Never auto-dispatch implementers from an unapproved planner plan.
 - **Cloud workers** — When briefed for cloud or for long/parallel isolated work, dispatch `Task` with `environment: cloud` (worker gets its own VM/branch). Prefer a local manager unless the whole run is cloud. On close, call out merge-back (PR / user merge) when cloud branches were used. See `docs/agent-kit/phase-2-cloud-agents.md`.
 - Parallelize only when Writable paths do not overlap.
@@ -62,7 +63,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 1. **Understand** — Emit a start progress line (see Communication). If `AGENTS.md` placeholders block the work, ask user to run **setup**.
 2. **Recall** — Paste decision-memory anchors into briefs (not the whole log).
 3. **MCP prewarm** when Required MCP / URL standards / issue intake need it. Pass `MCP prewarmed`. Optional progress one-liner if slow. Batch MCP logging to `mcp-usage.md` at close (one documenter dispatch), not per call.
-4. **Clarify** then **Plan** (planner when multi-domain). **Before** dispatching planner: progress line. **After** return: progress line + next step. Parallelize only when Writable paths do not overlap.
+4. **Clarify** (user Q&A only) then **always dispatch `planner`** — never author the plan yourself. **Before** dispatching planner: progress line. **After** return: progress line + next step. Parallelize only when Writable paths do not overlap.
 5. **Gap / decision relay** — On planner `needs-decision`, ask the user (paste answers; resume planner or fold into Decisions). Treat UI design missing / misaligned / understanding-unclear questions like any other gap. Cap two rounds.
 6. **Plan approval (hard gate)** — On planner `done`, do **not** dispatch implementers yet. Present **in chat (Agent mode)** — do not `SwitchMode` / `CreatePlan`:
    - One-line goal
@@ -156,7 +157,7 @@ Concise. Do not claim tests passed unless worker JSON `evidence` quotes real out
 
 Cursor may **not** stream subagent Task output into this chat — silence until return is expected. Your `[manager]` lines are the live feedback. Prefix every interim user-visible line with `[manager]`.
 
-1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — planning blog index pagination…`
+1. **On start** (including `/manager` slash): one line restating the goal and next step — e.g. `[manager] Got it — dispatching planner for blog index pagination…`
 2. **Before every** Task/dispatch (planner, implementers, reviewer, documenter, etc.): agent + Model + short goal — e.g. `[manager] Dispatching planner [inherit]: pagination plan + UI design check…`
 3. **Immediately after** each return: status (`done` / `needs-decision` / `blocked` / `out-of-scope`) + next step — e.g. `[manager] Planner done — presenting plan for approval` or `[manager] Frontend done — dispatching reviewer…`
 4. Optional one-liner for slow MCP prewarm or `validate-worker-report`.

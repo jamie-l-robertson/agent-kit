@@ -10,6 +10,16 @@
     ]
   },
   {
+    "id": 21,
+    "ask": "Manager invoked for a simple single-owner fix (e.g. typo in one component)",
+    "primary": "manager",
+    "model": "inherit",
+    "expect": [
+      "manager",
+      "planner"
+    ]
+  },
+  {
     "id": 18,
     "ask": "PII in application logs (retention/redaction) — not an auth bug",
     "primary": "risk",

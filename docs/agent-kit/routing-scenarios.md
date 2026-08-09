@@ -32,6 +32,7 @@ Every member of `WORKERS` in `.agents/hooks/gate-core.mjs` plus `manager` must a
 | # | Ask | Primary | Model | Expect (allowed) |
 |---|-----|---------|-------|------------------|
 | 1 | Multi-domain ship with unclear split | `manager` → `planner` (gap/ask + user plan approval before implementers; UI → design exists/align/understanding check) | `inherit` | manager, planner |
+| 21 | Manager invoked for a simple single-owner fix (e.g. typo in one component) | `manager` → `planner` always (no manager-authored plan / no skip) | `inherit` | manager, planner |
 | 18 | PII in logs (retention/redaction), not an auth bug | `risk` | `inherit` | risk (not security) |
 | 19 | GH Actions secret *reference* wiring | `devops` | `inherit` | devops (not infrastructure) |
 | 2 | Issue-backed / multi-step plan only | `planner` | `inherit` | planner |
