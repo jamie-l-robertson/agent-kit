@@ -256,6 +256,17 @@ Read and apply these project rules:
 
 ${ruleList}
 
+## Routing (read before starting work)
+
+This project uses managed orchestration. **Hand the work to specialists — do not build it in the main chat.**
+
+- **Multi-step, multi-domain, or research-dependent** (a feature, a page, anything touching UI + server + tests, or resting on facts nobody has sourced) → spawn the \`manager\` agent with the user's request verbatim. It plans via \`planner\` and dispatches the specialists.
+- **One clear owner, one small change** (a typo, a single-file tweak) → spawn that specialist directly: \`frontend\` \`backend\` \`tester\` \`documenter\` \`devops\` \`infrastructure\`, or the audit-only \`researcher\` \`reviewer\` \`security\` \`risk\`.
+- Unknown external facts, stats, or prior art → \`researcher\` first; it cites every claim.
+- Doing implementer work yourself instead of spawning is a process fail. Roleplaying a specialist ("acting as frontend") is not dispatch — only a real Task/Agent spawn is.
+
+Exception: answering questions about the repo, and edits to the kit itself (\`.claude/\`, \`scripts/\`).
+
 ## Agents & skills
 
 - Specialists: \`.claude/agents/\` (edit here — single tree)

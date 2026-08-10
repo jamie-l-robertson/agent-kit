@@ -4,6 +4,8 @@ Semantic notes for kit gates/validators (not a full git log). Version: see `.cla
 
 ## Unreleased
 
+- `CLAUDE.md` gains a **Routing** section. The managed-entry rule previously lived only in `manager.md` / `host-visibility.md` — which the main agent does not read until the manager is already running, so nothing ever told it to delegate in the first place. Guidance only: the hard entry is still invoking the `manager` skill explicitly
+
 - New `researcher` agent — facts, stats, prior art, market/competitor detail, and any external information a task is missing. Audit-only, never implements. **Citations are enforced**: `done` requires a non-empty `sources` array and each entry needs a title plus a `url` or repo/ticket `ref`; nothing citable → `blocked`. Planner tags research-answerable gaps so the manager routes them to `researcher` instead of asking the user
 
 - Hooks: commands use `node "${CLAUDE_PROJECT_DIR}/…"` — the gate no longer depends on hook cwd (Desktop **Code** tab, sub-directory sessions). `mergeClaudeSettings` sweeps any legacy spelling so upgrades replace rather than duplicate the hook
