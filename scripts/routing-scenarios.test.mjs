@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MANAGER, WORKERS, PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
+import { MANAGER, WORKERS, PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 import { parseFrontmatter } from './sync-tool-adapters.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -17,7 +17,7 @@ const ALLOWED = new Set([...PROJECT_AGENTS, 'no-owner'])
 function agentModels() {
   /** @type {Map<string, string>} */
   const map = new Map()
-  const dir = join(root, '.agents', 'agents')
+  const dir = join(root, '.claude', 'agents')
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.md'))) {
     const { frontmatter } = parseFrontmatter(readFileSync(join(dir, f), 'utf8'))
     const name = frontmatter.name || f.replace(/\.md$/, '')

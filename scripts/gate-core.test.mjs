@@ -27,7 +27,7 @@ import {
   PROJECT_AGENTS,
   FALLBACK_SESSION,
   lockPath,
-} from '../.agents/hooks/gate-core.mjs'
+} from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 let tmpStateDir = ''
@@ -575,8 +575,8 @@ test('tests do not touch DEFAULT_STATE_PATH', () => {
   assert.equal(after, before)
 })
 
-test('Copilot synced agents include nesting forbid + worker-report markers', () => {
-  const agentsDir = join(root, '.github', 'agents')
+test('Claude synced agents include nesting forbid + worker-report markers', () => {
+  const agentsDir = join(root, '.claude', 'agents')
   for (const name of PROJECT_AGENTS) {
     if (name === MANAGER) continue
     const body = readFileSync(join(agentsDir, `${name}.md`), 'utf8')
@@ -735,7 +735,7 @@ test('multiprocess decide under shared lock does not corrupt JSON', async () => 
     callerAgentId: '',
   })
   const worker = `
-import { decide } from ${JSON.stringify(join(root, '.agents/hooks/gate-core.mjs'))};
+import { decide } from ${JSON.stringify(join(root, '.claude/hooks/gate-core.mjs'))};
 process.env.AGENT_KIT_STATE_PATH = ${JSON.stringify(statePath)};
 process.env.AGENT_KIT_RUN_EVENTS = '0';
 const i = process.argv[2];

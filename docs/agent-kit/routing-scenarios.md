@@ -25,7 +25,7 @@ Skills (`a11y-wcag`, `perf-audit`, `architecture-review`, `code-review`) are **n
 
 ## Coverage rule
 
-Every member of `WORKERS` in `.agents/hooks/gate-core.mjs` plus `manager` must appear as **`primary` at least once** (`scripts/routing-scenarios.test.mjs` in CI). Keep a `no-owner` negative case. Optional negative rows for peer confusion (security≠risk, devops≠infra) are encouraged.
+Every member of `WORKERS` in `.claude/hooks/gate-core.mjs` plus `manager` must appear as **`primary` at least once** (`scripts/routing-scenarios.test.mjs` in CI). Keep a `no-owner` negative case. Optional negative rows for peer confusion (security≠risk, devops≠infra) are encouraged.
 
 ## Scenarios
 

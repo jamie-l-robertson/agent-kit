@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Multi-host health check for installed / kit repos.
+ * Claude Code kit health check for installed / kit repos.
  *   node scripts/check-agent-kit.mjs
  */
 
@@ -16,14 +16,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   decide,
-  normalizeCursorPayload,
   normalizeClaudePayload,
   emptyState,
   saveState,
   DEFAULT_STATE_PATH,
-  MANAGER,
-  PROJECT_AGENTS,
-} from '../.agents/hooks/gate-core.mjs'
+} from '../.claude/hooks/gate-core.mjs'
 import { validateWorkerReport } from './validate-worker-report.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -63,18 +60,18 @@ export function assertKitVersion(text) {
   const errors = []
   const trimmed = String(text || '').trim()
   if (!trimmed || trimmed === 'unknown') {
-    errors.push('.agents/.kit-version missing or unknown')
+    errors.push('.claude/.kit-version missing or unknown')
     return { ok: false, errors, fields: {} }
   }
   if (/^\d+\.\d+(\.\d+)?$/.test(trimmed)) {
     errors.push(
-      '.agents/.kit-version must use kit: <label> lines (not bare semver)',
+      '.claude/.kit-version must use kit: <label> lines (not bare semver)',
     )
     return { ok: false, errors, fields: {} }
   }
   const fields = parseKitVersion(trimmed)
   if (!fields.kit || !fields.kit.trim()) {
-    errors.push('.agents/.kit-version missing non-empty kit: line')
+    errors.push('.claude/.kit-version missing non-empty kit: line')
   }
   return { ok: errors.length === 0, errors, fields }
 }
@@ -166,93 +163,6 @@ function withTempGateState(fn) {
   }
 }
 
-function smokeCursorGate() {
-  withTempGateState(() => {
-    const sid = 'chk-root'
-    decide(
-      normalizeCursorPayload({
-        hook_event_name: 'sessionStart',
-        conversation_id: sid,
-        session_id: sid,
-      }),
-    )
-    decide(
-      normalizeCursorPayload({
-        hook_event_name: 'subagentStart',
-        session_id: sid,
-        conversation_id: 'chk-mgr',
-        parent_conversation_id: sid,
-        subagent_id: 'chk-mgr-1',
-        subagent_type: 'manager',
-      }),
-    )
-    const allow = decide(
-      normalizeCursorPayload({
-        hook_event_name: 'preToolUse',
-        session_id: sid,
-        conversation_id: 'chk-mgr',
-        parent_conversation_id: 'chk-mgr-1',
-        subagent_id: 'chk-fe',
-        tool_input: { subagent_type: 'frontend' },
-      }),
-    )
-    if (allow.action !== 'allow') {
-      throw new Error('Cursor smoke: manager→frontend denied')
-    }
-
-    decide(
-      normalizeCursorPayload({
-        hook_event_name: 'subagentStart',
-        session_id: sid,
-        conversation_id: 'chk-fe',
-        parent_conversation_id: 'chk-mgr-1',
-        subagent_id: 'chk-fe',
-        subagent_type: 'frontend',
-      }),
-    )
-    const deny = decide(
-      normalizeCursorPayload({
-        hook_event_name: 'preToolUse',
-        session_id: sid,
-        conversation_id: 'chk-fe',
-        parent_conversation_id: 'chk-fe',
-        subagent_id: 'chk-be',
-        tool_input: { subagent_type: 'backend' },
-      }),
-    )
-    if (deny.action !== 'deny') {
-      throw new Error('Cursor smoke: worker nest not denied')
-    }
-    const denyStart = decide(
-      normalizeCursorPayload({
-        hook_event_name: 'subagentStart',
-        session_id: sid,
-        conversation_id: 'chk-be',
-        parent_conversation_id: 'chk-fe',
-        subagent_id: 'chk-be',
-        subagent_type: 'backend',
-      }),
-    )
-    if (denyStart.action !== 'deny') {
-      throw new Error('Cursor smoke: subagentStart nest not denied')
-    }
-    const denyNoParent = decide(
-      normalizeCursorPayload({
-        hook_event_name: 'preToolUse',
-        session_id: sid,
-        conversation_id: 'chk-fe',
-        parent_conversation_id: '',
-        subagent_id: 'chk-be-2',
-        tool_input: { subagent_type: 'backend' },
-      }),
-    )
-    if (denyNoParent.action !== 'deny') {
-      throw new Error(
-        'Cursor smoke: worker nest without parent (conv alias) not denied',
-      )
-    }
-  })
-}
 
 function smokeClaudeGate() {
   withTempGateState(() => {
@@ -309,24 +219,6 @@ function smokeClaudeGate() {
   })
 }
 
-function smokeCopilotMarkers() {
-  const dir = join(ROOT, '.github', 'agents')
-  for (const name of PROJECT_AGENTS) {
-    if (name === MANAGER) continue
-    const p = join(dir, `${name}.md`)
-    if (!existsSync(p)) throw new Error(`missing Copilot agent ${name}`)
-    const body = readFileSync(p, 'utf8')
-    if (!/No nesting|cannot spawn|Do not spawn/i.test(body)) {
-      throw new Error(`Copilot ${name}: missing nesting forbid`)
-    }
-    if (!/```(?:json)?\s*\n[\s\S]*?"status"\s*:/.test(body)) {
-      throw new Error(`Copilot ${name}: missing worker-report fence shape`)
-    }
-    if (!/evidence|verificationResult/.test(body)) {
-      throw new Error(`Copilot ${name}: missing evidence/verificationResult contract`)
-    }
-  }
-}
 
 function smokeValidator() {
   const ok = validateWorkerReport({
@@ -385,7 +277,7 @@ function smokeValidator() {
 }
 
 function main() {
-  const kitVersionPath = join(ROOT, '.agents', '.kit-version')
+  const kitVersionPath = join(ROOT, '.claude', '.kit-version')
   const kitVersionRaw = existsSync(kitVersionPath)
     ? readFileSync(kitVersionPath, 'utf8')
     : ''
@@ -420,17 +312,7 @@ function main() {
     errors.push('  fix: node scripts/sync-project-skills.mjs')
   }
   try {
-    smokeCursorGate()
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e))
-  }
-  try {
     smokeClaudeGate()
-  } catch (e) {
-    errors.push(e instanceof Error ? e.message : String(e))
-  }
-  try {
-    smokeCopilotMarkers()
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
   }
@@ -453,7 +335,7 @@ function main() {
     process.exit(1)
   }
   console.log(
-    `check-agent-kit OK (kit ${kitVersionLabel}; sync, skills, Cursor/Claude gate smoke, Copilot markers, validator)`,
+    `check-agent-kit OK (kit ${kitVersionLabel}; sync, skills, Claude gate smoke, validator)`,
   )
 }
 

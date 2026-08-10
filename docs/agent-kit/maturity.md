@@ -11,15 +11,10 @@ Living status for kit correctness vs platform-shaped next steps.
 | Concurrency test theater | **Done** — multiprocess shared-state test |
 | Caller identity / invent-root | **Done** — unmapped parent → `unknown` deny; empty parent / missing ids → `root` (lean Cursor Task allow; noon semantics); **`conversationId` before `sessionId`** so worker conv aliases beat session root |
 | sessionId-before-conversationId fail-open | **Done** — nest without parent + worker `conversationId` alias denies (tests + check smoke) |
-| Real Cursor gate-log capture | **Ops** — set `AGENT_KIT_GATE_LOG=1`, attempt a worker nest, redact notes below |
-| Kit release tag | **Ops** — user-approved git tag (setup never auto-tags); pin via `AGENT_KIT_REF` |
-
-### Cursor gate-log capture (operator)
-
-```bash
-export AGENT_KIT_GATE_LOG=1
+| Real 
+### 
 # In Cursor: manager → worker, then have that worker try to spawn (expect deny)
-# Inspect: .agents/hooks/state/gate-log.jsonl
+# Inspect: .claude/hooks/state/gate-log.jsonl
 ```
 
 Record here after a real capture (redact ids):
@@ -34,8 +29,8 @@ Record here after a real capture (redact ids):
 
 | Item | Status |
 |------|--------|
-| Run-event JSONL | **Done** — gate emit deny/allow; schema `.agents/schemas/run-event.schema.json`; dir `.agents/memory/runs/` (gitignored). Disable: `AGENT_KIT_RUN_EVENTS=0`. Optional POST: `AGENT_KIT_TELEMETRY_URL` |
-| Kit version in `check` | **Done** — `.agents/.kit-version` |
+| Run-event JSONL | **Done** — gate emit deny/allow; schema `.claude/schemas/run-event.schema.json`; dir `.claude/memory/runs/` (gitignored). Disable: `AGENT_KIT_RUN_EVENTS=0`. Optional POST: `AGENT_KIT_TELEMETRY_URL` |
+| Kit version in `check` | **Done** — `.claude/.kit-version` |
 | Honest host matrix | See README feature matrix |
 | Manager Final report + Token costs | **Done** — mandatory close template; optional worker-report `usage`; never invent $ |
 

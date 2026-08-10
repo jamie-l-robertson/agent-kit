@@ -17,8 +17,8 @@ Store durable **product/design** decisions so the manager and resumed workers do
 
 | Log | Path | Contents |
 |-----|------|----------|
-| Decisions | `.agents/memory/decisions.md` | Settled product/design choices |
-| MCP usage | `.agents/memory/mcp-usage.md` | Server/tool/outcome telemetry only |
+| Decisions | `.claude/memory/decisions.md` | Settled product/design choices |
+| MCP usage | `.claude/memory/mcp-usage.md` | Server/tool/outcome telemetry only |
 
 ## Roles
 

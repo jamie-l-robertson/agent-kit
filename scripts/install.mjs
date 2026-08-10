@@ -33,10 +33,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
-import {
-  mergeCursorHooks,
-  mergeClaudeSettings,
-} from './merge-host-config.mjs'
+import { mergeClaudeSettings } from './merge-host-config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const KIT_ROOT_WHEN_LOCAL = resolve(__dirname, '..')
@@ -94,7 +91,7 @@ function ensureDir(p) {
 }
 
 function ensureInstallAuditHeader(target) {
-  const dest = join(target, '.agents', 'memory', 'install-audit.md')
+  const dest = join(target, '.claude', 'memory', 'install-audit.md')
   ensureDir(dirname(dest))
   if (!existsSync(dest)) {
     writeFileSync(
@@ -174,7 +171,7 @@ function copyTreeFiltered(src, dest, { skipFiles = new Set() } = {}, rel = '') {
 function snapshotMemoryFiles(target) {
   /** @type {Map<string, string>} */
   const out = new Map()
-  const mem = join(target, '.agents', 'memory')
+  const mem = join(target, '.claude', 'memory')
   for (const name of MEMORY_PRESERVE) {
     const p = join(mem, name)
     if (existsSync(p)) out.set(name, readFileSync(p, 'utf8'))
@@ -183,7 +180,7 @@ function snapshotMemoryFiles(target) {
 }
 
 function restoreMemoryFiles(target, snap) {
-  const mem = join(target, '.agents', 'memory')
+  const mem = join(target, '.claude', 'memory')
   ensureDir(mem)
   for (const [name, content] of snap) {
     writeFileSync(join(mem, name), content, 'utf8')
@@ -193,7 +190,7 @@ function restoreMemoryFiles(target, snap) {
 function snapshotRuleKeeps(target) {
   /** @type {Map<string, string>} */
   const out = new Map()
-  const rules = join(target, '.agents', 'rules')
+  const rules = join(target, '.claude', 'rules')
   for (const name of RULE_KEEP_NAMES) {
     const p = join(rules, name)
     if (existsSync(p)) out.set(name, readFileSync(p, 'utf8'))
@@ -202,12 +199,12 @@ function snapshotRuleKeeps(target) {
 }
 
 function restoreRuleKeeps(target, snap, kitLabel) {
-  const rules = join(target, '.agents', 'rules')
+  const rules = join(target, '.claude', 'rules')
   ensureDir(rules)
   for (const [name, content] of snap) {
     writeFileSync(join(rules, name), content, 'utf8')
     appendInstallKeep(target, {
-      path: `.agents/rules/${name}`,
+      path: `.claude/rules/${name}`,
       kit: kitLabel,
       force: false,
     })
@@ -239,10 +236,7 @@ function copyKitScripts(kitRoot, target, { force = false } = {}) {
 }
 
 function assertValidKitJson(kitRoot) {
-  const paths = [
-    join(kitRoot, '.cursor', 'hooks.json'),
-    join(kitRoot, '.claude', 'settings.json'),
-  ]
+  const paths = [join(kitRoot, '.claude', 'settings.json')]
   for (const p of paths) {
     if (!existsSync(p)) continue
     try {
@@ -256,7 +250,7 @@ function assertValidKitJson(kitRoot) {
 }
 
 function writeKitVersion(target, kitLabel) {
-  const dest = join(target, '.agents', '.kit-version')
+  const dest = join(target, '.claude', '.kit-version')
   ensureDir(dirname(dest))
   const lines = [
     `kit: ${kitLabel}`,
@@ -277,8 +271,6 @@ function readJsonIfExists(path) {
  */
 export function installFrom(kitRoot, { force = false, kitLabel, target = process.cwd() } = {}) {
   const required = [
-    '.agents',
-    '.cursor',
     '.claude',
     'scripts/sync-tool-adapters.mjs',
     'scripts/sync-project-skills.mjs',
@@ -294,32 +286,15 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
   const label = kitLabel || kitRoot
   const priorMemory = snapshotMemoryFiles(target)
   const priorRules = snapshotRuleKeeps(target)
-  const priorCursorHooks = readJsonIfExists(join(target, '.cursor', 'hooks.json'))
   const priorClaudeSettings = readJsonIfExists(
     join(target, '.claude', 'settings.json'),
   )
 
-  copyDir(join(kitRoot, '.agents'), join(target, '.agents'))
-  writeKitVersion(target, label)
-  copyTreeFiltered(join(kitRoot, '.cursor'), join(target, '.cursor'), {
-    skipFiles: new Set(['hooks.json']),
-  })
   copyTreeFiltered(join(kitRoot, '.claude'), join(target, '.claude'), {
     skipFiles: new Set(['settings.json']),
   })
+  writeKitVersion(target, label)
 
-  // Restore project host configs before merge so foreign entries survive
-  if (priorCursorHooks != null) {
-    ensureDir(join(target, '.cursor'))
-    writeFileSync(join(target, '.cursor', 'hooks.json'), priorCursorHooks, 'utf8')
-  } else {
-    // seed from kit then merge (idempotent)
-    const kitHooks = join(kitRoot, '.cursor', 'hooks.json')
-    if (existsSync(kitHooks)) {
-      ensureDir(join(target, '.cursor'))
-      cpSync(kitHooks, join(target, '.cursor', 'hooks.json'))
-    }
-  }
   if (priorClaudeSettings != null) {
     ensureDir(join(target, '.claude'))
     writeFileSync(
@@ -335,25 +310,10 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
     }
   }
 
-  mergeCursorHooks(target, { failOnInvalidJson: true })
   mergeClaudeSettings(target, { failOnInvalidJson: true })
-
-  // gate shim
-  ensureDir(join(target, '.cursor', 'hooks'))
-  writeFileSync(
-    join(target, '.cursor', 'hooks', 'gate-subagents.mjs'),
-    `#!/usr/bin/env node\nimport '../../.agents/hooks/adapters/cursor.mjs'\n`,
-    'utf8',
-  )
 
   restoreMemoryFiles(target, priorMemory)
   restoreRuleKeeps(target, priorRules, label)
-
-  mkdirSync(join(target, '.github'), { recursive: true })
-  for (const sub of ['agents', 'skills', 'instructions']) {
-    const src = join(kitRoot, '.github', sub)
-    if (existsSync(src)) copyDir(src, join(target, '.github', sub))
-  }
 
   copyKitScripts(kitRoot, target, { force })
 
@@ -373,7 +333,7 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
     if (existsSync(dest) && !force) {
       appendInstallKeep(target, { path: file, kit: label, force: false })
       console.log(
-        `Kept existing ${file} (pass --force or AGENT_KIT_FORCE=1 to replace). Logged to .agents/memory/install-audit.md — run **setup** to merge kit-required sections.`,
+        `Kept existing ${file} (pass --force or AGENT_KIT_FORCE=1 to replace). Logged to .claude/memory/install-audit.md — run **setup** to merge kit-required sections.`,
       )
     } else {
       cpSync(src, dest)
@@ -389,7 +349,7 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
 /**
  * Regenerate skills-inventory + AGENTS.md Skills line for `target`.
  * Runs the *kit*'s sync-project-skills with --root so stale consumer scripts
- * cannot break refresh, and install.mjs stays loadable without .agents/.
+ * cannot break refresh, and install.mjs stays loadable without .claude/.
  */
 function refreshSkillsInventory(target, kitRoot) {
   const agentsMd = join(target, 'AGENTS.md')
@@ -447,7 +407,7 @@ function main() {
 
   try {
     if (!kitRoot) {
-      const localAgents = join(KIT_ROOT_WHEN_LOCAL, '.agents')
+      const localAgents = join(KIT_ROOT_WHEN_LOCAL, '.claude')
       const repo = process.env.AGENT_KIT_REPO || DEFAULT_REPO
       const ref = process.env.AGENT_KIT_REF || DEFAULT_REF
       const preferLocal =
@@ -469,9 +429,14 @@ function main() {
       }
     }
 
-    const kitLabel = from
-      ? `--from=${kitRoot}`
-      : `${process.env.AGENT_KIT_REPO || DEFAULT_REPO}@${process.env.AGENT_KIT_REF || DEFAULT_REF}`
+    // install.sh always passes --from (it extracts the download itself), so a
+    // GitHub install must still record repo@ref — not a temp path that is about
+    // to be deleted. AGENT_KIT_SOURCE is set by install.sh on the download path.
+    const remoteLabel = `${process.env.AGENT_KIT_REPO || DEFAULT_REPO}@${process.env.AGENT_KIT_REF || DEFAULT_REF}`
+    const kitLabel =
+      from && process.env.AGENT_KIT_SOURCE !== 'github'
+        ? `local:${kitRoot}`
+        : remoteLabel
     console.log(`Installing into ${TARGET}`)
     installFrom(kitRoot, { force, kitLabel, target: TARGET })
     console.log(`
@@ -481,12 +446,12 @@ Next — configure the stack card:
   Ask your coding agent to run the **setup** skill
   (e.g. “run setup” or /setup).
   If AGENTS.md / CLAUDE.md were kept, setup will offer copy-paste append blocks
-  for any missing kit-required sections (see .agents/memory/install-audit.md).
+  for any missing kit-required sections (see .claude/memory/install-audit.md).
 
 Optional:
-  node scripts/check-agent-kit.mjs             # multi-host health
-  node scripts/sync-tool-adapters.mjs          # after you edit .agents/
-  node scripts/sync-tool-adapters.mjs --check  # detect adapter drift
+  node scripts/check-agent-kit.mjs             # kit health
+  node scripts/sync-tool-adapters.mjs          # after editing .claude/ (settings + CLAUDE.md)
+  node scripts/sync-tool-adapters.mjs --check  # roster / settings / marker check
   node scripts/sync-project-skills.mjs         # skills inventory (setup runs this)
 `)
   } finally {

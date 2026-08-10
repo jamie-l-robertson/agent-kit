@@ -21,7 +21,7 @@ const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 test('installFrom copies runtime scripts, docs/agent-kit, preserves decisions.md', () => {
   const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
   try {
-    const mem = join(target, '.agents', 'memory')
+    const mem = join(target, '.claude', 'memory')
     mkdirSync(mem, { recursive: true })
     const marker = '# project decisions\n\nkeep-me\n'
     writeFileSync(join(mem, 'decisions.md'), marker)
@@ -55,24 +55,13 @@ test('installFrom copies runtime scripts, docs/agent-kit, preserves decisions.md
   }
 })
 
-test('install merges host configs and preserves foreign github workflow', () => {
+test('install merges Claude settings and preserves foreign github workflow', () => {
   const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
   try {
-    mkdirSync(join(target, '.cursor'), { recursive: true })
     mkdirSync(join(target, '.claude'), { recursive: true })
     mkdirSync(join(target, '.github', 'workflows'), { recursive: true })
-    mkdirSync(join(target, '.agents', 'rules'), { recursive: true })
+    mkdirSync(join(target, '.claude', 'rules'), { recursive: true })
 
-    writeFileSync(
-      join(target, '.cursor', 'hooks.json'),
-      JSON.stringify({
-        version: 1,
-        hooks: {
-          afterFileEdit: [{ command: 'node format.js' }],
-        },
-      }),
-      'utf8',
-    )
     writeFileSync(
       join(target, '.claude', 'settings.json'),
       JSON.stringify({
@@ -95,7 +84,7 @@ test('install merges host configs and preserves foreign github workflow', () => 
       'utf8',
     )
     writeFileSync(
-      join(target, '.agents', 'rules', 'design-system.md'),
+      join(target, '.claude', 'rules', 'design-system.md'),
       '# project design system\n\nkeep-tokens\n',
       'utf8',
     )
@@ -104,24 +93,19 @@ test('install merges host configs and preserves foreign github workflow', () => 
 
     installFrom(kitRoot, { force: true, kitLabel: 'test', target })
 
-    const hooks = JSON.parse(
-      readFileSync(join(target, '.cursor', 'hooks.json'), 'utf8'),
-    )
-    assert.ok(
-      hooks.hooks.afterFileEdit?.some((e) => e.command === 'node format.js'),
-      'foreign cursor hook preserved',
-    )
-    assert.ok(
-      hooks.hooks.subagentStart?.some((e) =>
-        String(e.command).includes('cursor.mjs'),
-      ),
-      'kit cursor gate merged',
-    )
-
     const settings = JSON.parse(
       readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
     )
-    assert.deepEqual(settings.permissions, { allow: ['Bash'] })
+    assert.ok(
+      settings.permissions.allow.includes('Bash'),
+      'foreign permission preserved',
+    )
+    assert.ok(
+      settings.permissions.allow.includes(
+        'Bash(node scripts/validate-worker-report.mjs:*)',
+      ),
+      'kit script allowlist added',
+    )
     assert.equal(settings.env.FOO, 'bar')
     assert.ok(
       settings.hooks.PreToolUse.some((e) => e.matcher === 'Bash'),
@@ -144,11 +128,11 @@ test('install merges host configs and preserves foreign github workflow', () => 
       existsSync(join(target, 'docs', 'agent-kit', 'routing-scenarios.md')),
     )
     assert.equal(
-      readFileSync(join(target, '.agents', 'rules', 'design-system.md'), 'utf8'),
+      readFileSync(join(target, '.claude', 'rules', 'design-system.md'), 'utf8'),
       '# project design system\n\nkeep-tokens\n',
     )
     const audit = readFileSync(
-      join(target, '.agents', 'memory', 'install-audit.md'),
+      join(target, '.claude', 'memory', 'install-audit.md'),
       'utf8',
     )
     assert.match(audit, /design-system\.md/)
@@ -160,17 +144,37 @@ test('install merges host configs and preserves foreign github workflow', () => 
 test('install keep path logs AGENTS.md without overwrite', () => {
   const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
   try {
-    writeFileSync(join(target, 'AGENTS.md'), '# project agents\n', 'utf8')
+    const body = '# project agents\n\nno stack anchor here\n'
+    writeFileSync(join(target, 'AGENTS.md'), body, 'utf8')
     installFrom(kitRoot, { force: false, kitLabel: 'test', target })
-    const agents = readFileSync(join(target, 'AGENTS.md'), 'utf8')
-    assert.match(agents, /# project agents/, 'kept project body')
-    assert.match(agents, /^- \*\*Skills\*\*:/m, 'skills line patched on keep')
+    assert.equal(
+      readFileSync(join(target, 'AGENTS.md'), 'utf8'),
+      body,
+      'kept AGENTS.md must be byte-identical — "kept" means kept',
+    )
     const audit = readFileSync(
-      join(target, '.agents', 'memory', 'install-audit.md'),
+      join(target, '.claude', 'memory', 'install-audit.md'),
       'utf8',
     )
     assert.match(audit, /AGENTS\.md/)
     assert.match(audit, /kept-project/)
+  } finally {
+    rmSync(target, { recursive: true, force: true })
+  }
+})
+
+test('install patches a kept AGENTS.md that has a Stack anchor', () => {
+  const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
+  try {
+    writeFileSync(
+      join(target, 'AGENTS.md'),
+      '# project agents\n\n## Stack\n\n- **App**: mine\n',
+      'utf8',
+    )
+    installFrom(kitRoot, { force: false, kitLabel: 'test', target })
+    const agents = readFileSync(join(target, 'AGENTS.md'), 'utf8')
+    assert.match(agents, /# project agents/, 'kept project body')
+    assert.match(agents, /## Stack\n\n- \*\*Skills\*\*:/, 'skills line anchored')
   } finally {
     rmSync(target, { recursive: true, force: true })
   }
@@ -190,7 +194,7 @@ test('install skips differing scripts unless force; writes kit-version', () => {
       readFileSync(join(target, 'scripts', 'sync-tool-adapters.mjs'), 'utf8'),
       '// project custom\n',
     )
-    const ver = readFileSync(join(target, '.agents', '.kit-version'), 'utf8')
+    const ver = readFileSync(join(target, '.claude', '.kit-version'), 'utf8')
     assert.match(ver, /test@ref/)
     installFrom(kitRoot, { force: true, kitLabel: 'test@ref', target })
     assert.notEqual(
@@ -258,7 +262,7 @@ test('install.mjs CLI entry runs when invoked via TMPDIR path', () => {
 test('install refreshes stale skills-inventory.md (not preserved)', () => {
   const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
   try {
-    const mem = join(target, '.agents', 'memory')
+    const mem = join(target, '.claude', 'memory')
     mkdirSync(mem, { recursive: true })
     writeFileSync(
       join(mem, 'skills-inventory.md'),
@@ -266,7 +270,7 @@ test('install refreshes stale skills-inventory.md (not preserved)', () => {
     )
     writeFileSync(
       join(target, 'AGENTS.md'),
-      '# Agent stack card\n\n## Stack\n\n- **Skills**: kit — none. Inventory: `.agents/memory/skills-inventory.md`.\n',
+      '# Agent stack card\n\n## Stack\n\n- **Skills**: kit — none. Inventory: `.claude/memory/skills-inventory.md`.\n',
     )
 
     installFrom(kitRoot, {

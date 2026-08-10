@@ -7,7 +7,7 @@ import {
   loadSchemaRequired,
   schemaAgentEnum,
 } from './validate-worker-report.mjs'
-import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
+import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
 const valid = {
   status: 'done',
@@ -313,7 +313,7 @@ test('document rejects product paths in changed', () => {
       ...valid,
       agent: 'documenter',
       mode: 'document',
-      changed: ['.agents/memory/decisions.md', 'docs/agent-kit/notes.md'],
+      changed: ['.claude/memory/decisions.md', 'docs/agent-kit/notes.md'],
       verificationResult: 'n/a',
       evidence: null,
     }).ok,

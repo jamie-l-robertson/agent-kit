@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/adapters/claude.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs\""
           }
         ]
       }
@@ -16,17 +16,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/adapters/claude.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs\""
           }
         ]
       }
     ],
     "SubagentStop": [
       {
+        "matcher": "backend|devops|documenter|frontend|infrastructure|manager|planner|reviewer|risk|security|tester",
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/adapters/claude.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs\""
           }
         ]
       }
@@ -36,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/adapters/claude.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs\""
           }
         ]
       }
@@ -46,10 +47,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .agents/hooks/adapters/claude.mjs"
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs\""
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(node scripts/validate-worker-report.mjs:*)",
+      "Bash(node scripts/check-agent-kit.mjs:*)",
+      "Bash(node scripts/sync-tool-adapters.mjs:*)",
+      "Bash(node scripts/sync-project-skills.mjs:*)"
     ]
   }
 }

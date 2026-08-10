@@ -32,8 +32,6 @@ test('implement/readonly/document protocols share nesting + never-assume-impleme
 })
 
 test('composeBody detects include cycles', () => {
-  // Simulate by calling compose with a fake self-include via expand path —
-  // protocols don't cycle today; assert leftover marker throw on unexpanded marker
   assert.throws(
     () => composeBody('<!-- protocol:does-not-exist-xyz -->'),
     /Missing protocol/,
@@ -48,7 +46,7 @@ test('isAlwaysOnRule: default and path-only', () => {
 
 test('design-system rule is path-only', () => {
   const raw = readFileSync(
-    join(root, '.agents/rules/design-system.md'),
+    join(root, '.claude/rules/design-system.md'),
     'utf8',
   )
   const { frontmatter } = parseFrontmatter(raw)
@@ -60,16 +58,16 @@ test('validateWorkers passes for current kit roster', () => {
   assert.doesNotThrow(() => validateWorkers())
 })
 
-test('composedAgentSource keeps frontmatter and expands body', () => {
-  const raw = readFileSync(join(root, '.agents/agents/frontend.md'), 'utf8')
+test('composedAgentSource expands protocol markers when present', () => {
+  const raw = `---\nname: demo\nmodel: inherit\n---\n\nIntro\n\n<!-- protocol:readonly -->\n`
   const composed = composedAgentSource(raw)
   assert.match(composed, /^---\n/)
   assert.match(composed, /Shared worker protocol/)
   assert.doesNotMatch(composed, /<!--\s*protocol:/)
 })
 
-test('every agent has model frontmatter; Cursor compose keeps it', () => {
-  const dir = join(root, '.agents', 'agents')
+test('every .claude agent has model frontmatter and no leftover markers', () => {
+  const dir = join(root, '.claude', 'agents')
   for (const f of readdirSync(dir).filter((x) => x.endsWith('.md'))) {
     const raw = readFileSync(join(dir, f), 'utf8')
     const { frontmatter } = parseFrontmatter(raw)
@@ -77,7 +75,10 @@ test('every agent has model frontmatter; Cursor compose keeps it', () => {
       typeof frontmatter.model === 'string' && frontmatter.model.length > 0,
       `${f} missing model:`,
     )
-    const composed = composedAgentSource(raw)
-    assert.match(composed, /^model: /m, `${f} compose dropped model`)
+    assert.doesNotMatch(
+      raw,
+      /<!--\s*(protocol|include):/,
+      `${f} still has protocol/include markers`,
+    )
   }
 })

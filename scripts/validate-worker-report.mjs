@@ -1,6 +1,6 @@
 /**
  * Dependency-free validator for worker-report JSON fences.
- * Mirrors .agents/schemas/worker-report.schema.json bounce-critical rules.
+ * Mirrors .claude/schemas/worker-report.schema.json bounce-critical rules.
  * Usage: node scripts/validate-worker-report.mjs '<json>' | --stdin
  */
 
@@ -8,13 +8,13 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // fileURLToPath used for isMain
-import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
+import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SCHEMA_PATH = join(
   __dirname,
   '..',
-  '.agents',
+  '.claude',
   'schemas',
   'worker-report.schema.json',
 )
@@ -251,8 +251,8 @@ export function isDocumentWritablePath(p) {
   if (typeof p !== 'string' || !p.trim()) return false
   if (p === 'AGENTS.md' || p === 'CLAUDE.md' || p === 'README.md') return true
   if (p.startsWith('docs/')) return true
-  if (p.startsWith('.agents/memory/')) return true
-  if (p.startsWith('.agents/') && p.endsWith('.md')) return true
+  if (p.startsWith('.claude/memory/')) return true
+  if (p.startsWith('.claude/') && p.endsWith('.md')) return true
   return false
 }
 

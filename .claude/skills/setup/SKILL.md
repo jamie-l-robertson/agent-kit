@@ -47,13 +47,13 @@ Setup progress:
 
 ### 0. Existing AGENTS.md / CLAUDE.md (project-owned)
 
-If `.agents/memory/install-audit.md` has `kept-project` for `AGENTS.md` / `CLAUDE.md`, **or** kit-required sections are missing:
+If `.claude/memory/install-audit.md` has `kept-project` for `AGENTS.md` / `CLAUDE.md`, **or** kit-required sections are missing:
 
 **AGENTS.md kit sections (check these):** `### Resolving Design system / standards refs`, `## Agents & routing`, `## Memory`, Stack bullet `**Skills**:` (not a heading), `## No owner`.  
 **CLAUDE.md kit sections:** `## Always-on rules`, Agents & skills / sync notes (see append-blocks). Do **not** require an AGENTS heading named “Always-on rules” or “Skills”.
 
 1. Tell the user clearly: the project is using **its own** file(s); kit-required sections may be missing and must be **appended** (not silently overwritten).
-2. Read [`.agents/skills/setup/append-blocks.md`](append-blocks.md). For each missing block, show the fenced copy-paste content and ask them to paste — or confirm you may append with their permission.
+2. Read [`.claude/skills/setup/append-blocks.md`](append-blocks.md). For each missing block, show the fenced copy-paste content and ask them to paste — or confirm you may append with their permission.
 3. Prefer append-at-end / insert under the right heading. Never delete project content unless they explicitly ask to replace (`--force` / “overwrite with kit template”).
 
 ### 1. Scan
@@ -72,7 +72,7 @@ Then explore the repo (do not ask what you can detect):
 | Directory layout | Likely frontend vs backend path ownership |
 | `.env.example` / `.env*.example` **names only** | Required env **names** (never values) |
 | `docs/standards/{frontend,backend,api}.md` or similar | Standards local paths |
-| `.agents/rules/design-system.md` or `docs/design-system.md` | Design system path candidate |
+| `.claude/rules/design-system.md` or `docs/design-system.md` | Design system path candidate |
 
 Never read or store secret values from `.env`.
 
@@ -92,13 +92,13 @@ Ask only for fields still missing after inference. Suggested order:
 2. **Database** — or `none` / `n/a`
 3. **Package manager** — confirm lockfile detection
 4. **UI** — styling system
-5. **Design system** — repo path or `https://` URL, or `n/a`. Prefer an existing project doc with real content. Kit stub `.agents/rules/design-system.md` is empty headings only — **default `n/a`** until the stub (or another file) has substantive content. If URL: do not fetch it; note workers need MCP.
+5. **Design system** — repo path or `https://` URL, or `n/a`. Prefer an existing project doc with real content. Kit stub `.claude/rules/design-system.md` is empty headings only — **default `n/a`** until the stub (or another file) has substantive content. If URL: do not fetch it; note workers need MCP.
 6. **Design system adherence** — only if Design system is a real ref: `strict` | `standard` | `loose` (recommend `standard`). If Design system is `n/a`, write `n/a`.
 7. **Frontend standards** — path, URL, or `n/a` (infer `docs/standards/frontend.md` if present and non-empty)
 8. **Backend standards** — path, URL, or `n/a`
 9. **API standards** — path, URL, or `n/a`
 10. **Cloud platform** — `aws` | `azure` | `gcp` | `multi` | `n/a` (infer from `*.tf` / Pulumi / CDK / Bicep when possible)
-11. **Cloud / DevOps / Infrastructure / Security / Risk standards** — each path, URL, or `n/a`. Untouched kit stubs under `.agents/rules/*-standards.md` (empty headings) → write **`n/a`**, do not point stack slots at empty stubs.
+11. **Cloud / DevOps / Infrastructure / Security / Risk standards** — each path, URL, or `n/a`. Untouched kit stubs under `.claude/rules/*-standards.md` (empty headings) → write **`n/a`**, do not point stack slots at empty stubs.
 12. **Standards MCP** — if any standards/design-system ref is a URL: MCP server id hint (e.g. `notion`, `confluence`, `github`) or `unknown` (workers `blocked` until MCP exists). Else `n/a`.
 13. **Required MCP** — comma-separated server ids to prewarm (e.g. `github, notion, context7`) or `none`. Include Standards MCP + issue trackers the team uses.
 14. **Server** — where server logic lives (paths or pattern)
@@ -107,7 +107,7 @@ Ask only for fields still missing after inference. Suggested order:
    Prefer real scripts from `package.json`. Use `n/a` when unused.
 17. **Required env** — names needed for boots/e2e, or `none`
 18. **No owner** — keep kit defaults unless the user adds project-specific zones
-19. **Agent models (optional)** — kit default is `inherit` on every `.agents/agents/<name>.md`. Ask if the project wants any per-agent pins (picker-available slugs only). Skip keeps all `inherit`. If pinning: edit those agents’ `model:` frontmatter, then `node scripts/sync-tool-adapters.mjs`.
+19. **Agent models (optional)** — kit default is `inherit` on every `.claude/agents/<name>.md`. Ask if the project wants any per-agent pins (picker-available slugs only). Skip keeps all `inherit`. If pinning: edit those agents’ `model:` frontmatter, then `node scripts/sync-tool-adapters.mjs`.
 
 Keep the fixed sections (**Rules**, **Agents & routing**, **Memory**, call-graph note, ref-resolution table) unless the user asks to change agents.
 
@@ -131,9 +131,9 @@ Show a short diff summary of what changed; offer one follow-up edit pass if some
 node scripts/sync-project-skills.mjs
 ```
 
-Follow **sync-project-skills** (`.agents/skills/sync-project-skills/SKILL.md`). On success, report kit vs project skill counts in the setup summary. On failure → fix and re-run; do not mark setup Done.
+Follow **sync-project-skills** (`.claude/skills/sync-project-skills/SKILL.md`). On success, report kit vs project skill counts in the setup summary. On failure → fix and re-run; do not mark setup Done.
 
-This updates the **Skills** line and writes `.agents/memory/skills-inventory.md` (non-destructive; never deletes skill dirs).
+This updates the **Skills** line and writes `.claude/memory/skills-inventory.md` (non-destructive; never deletes skill dirs).
 
 ### 6. Post-setup checks (brief)
 
@@ -143,13 +143,13 @@ After skills sync, **always** run:
 node scripts/check-agent-kit.mjs
 ```
 
-That covers adapter drift (Cursor/Claude/Copilot), skills inventory, Cursor+Claude gate smoke, and Copilot nesting/report markers. Fix failures before Done.
+That covers adapter drift (Claude), skills inventory, Claude gate smoke, and validator. Fix failures before Done.
 
 Also verify/report:
 
-1. `.gitignore` ignores `.agents/hooks/state/` (and legacy `.cursor/hooks/state/` if present).
-2. Worker names in `.agents/hooks/gate-core.mjs` (`WORKERS`) match `.agents/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
-3. If you edited `.agents/` sources beyond setup fills, remind `node scripts/sync-tool-adapters.mjs` before commit, then **commit** both `.agents/` and generated `.cursor/`, `.claude/`, `.github/{agents,skills,instructions}/` (consumers should commit those trees after install too).
+1. `.gitignore` ignores `.claude/hooks/state/`.
+2. Worker names in `.claude/hooks/gate-core.mjs` (`WORKERS`) match `.claude/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
+3. If you edited `.claude/` (agents/skills/hooks/rules), run `node scripts/sync-tool-adapters.mjs --check` / `node scripts/sync-project-skills.mjs` before commit, then **commit** `.claude/`.
 4. Remind: Context7 / other **Required MCP** must be installable for prewarm.
 
 ## Done criteria

@@ -9,21 +9,21 @@ Copy-paste these into an existing project `AGENTS.md` / `CLAUDE.md` when install
 ## AGENTS.md — Stack additions (merge under `## Stack`)
 
 ```markdown
-- **Design system**: <!-- repo path or https URL — e.g. `.agents/rules/design-system.md` — or n/a -->
+- **Design system**: <!-- repo path or https URL — e.g. `.claude/rules/design-system.md` — or n/a -->
 - **Design system adherence**: <!-- strict | standard | loose — only when Design system is set; else n/a. Default if unset: standard -->
 - **Frontend standards**: <!-- repo path or https URL — e.g. `docs/standards/frontend.md` — or n/a -->
 - **Backend standards**: <!-- repo path or https URL — or n/a -->
 - **API standards**: <!-- repo path or https URL — or n/a -->
 - **Cloud platform**: <!-- aws | azure | gcp | multi | n/a -->
-- **Cloud standards**: <!-- repo path or https URL — e.g. `.agents/rules/cloud-standards.md` — or n/a -->
+- **Cloud standards**: <!-- repo path or https URL — e.g. `.claude/rules/cloud-standards.md` — or n/a -->
 - **DevOps standards**: <!-- repo path or https URL — or n/a -->
 - **Infrastructure standards**: <!-- repo path or https URL — or n/a -->
 - **Security standards**: <!-- repo path or https URL — or n/a -->
 - **Risk standards**: <!-- repo path or https URL — or n/a -->
 - **Standards MCP**: <!-- when any standards/design-system ref is a URL: MCP server id hint, e.g. notion | confluence | github — or n/a -->
 - **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
-- **Rules**: always-on under `.agents/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
-- **Skills**: kit — (run `node scripts/sync-project-skills.mjs` after append); project — none until inventory sync. Inventory: `.agents/memory/skills-inventory.md`. Agent bodies compose `.agents/protocols/` at sync.
+- **Rules**: always-on under `.claude/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
+- **Skills**: kit — (run `node scripts/sync-project-skills.mjs` after append); project — none until inventory sync. Inventory: `.claude/memory/skills-inventory.md`. Agent bodies compose `.claude/protocols/` at sync.
 ```
 
 ---
@@ -45,11 +45,11 @@ Paste from kit `AGENTS.md` section **## Agents & routing** (full table including
 ```markdown
 ## Memory
 
-- Decisions: `.agents/memory/decisions.md` (product/design choices)
-- MCP usage: `.agents/memory/mcp-usage.md` (server/tool/outcome only — not decisions)
-- Skills inventory: `.agents/memory/skills-inventory.md` (from `node scripts/sync-project-skills.mjs`)
-- Install keep-audit: `.agents/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
-- Skill: `.agents/skills/agent-memory/SKILL.md`
+- Decisions: `.claude/memory/decisions.md` (product/design choices)
+- MCP usage: `.claude/memory/mcp-usage.md` (server/tool/outcome only — not decisions)
+- Skills inventory: `.claude/memory/skills-inventory.md` (from `node scripts/sync-project-skills.mjs`)
+- Install keep-audit: `.claude/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
+- Skill: `.claude/skills/agent-memory/SKILL.md`
 - **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the target log
 ```
 
@@ -74,20 +74,19 @@ Follow the stack card in `AGENTS.md` for package manager, ownership, and narrow 
 
 ## Always-on rules
 
-Read and apply these project rules (also mirrored under `.cursor/rules/` and `.github/instructions/`):
+Read and apply these project rules:
 
-- `.agents/rules/context7-api-validation.md`
-- `.agents/rules/karpathy-guidelines.md`
-- `.agents/rules/tdd-testing.md`
+- `.claude/rules/context7-api-validation.md`
+- `.claude/rules/karpathy-guidelines.md`
+- `.claude/rules/tdd-testing.md`
 
 ## Agents & skills
 
-- Specialists: `.claude/agents/` (synced from `.agents/agents/`)
-- Skills: `.claude/skills/` (synced from `.agents/skills/`)
-- Decision log: `.agents/memory/decisions.md`
-- Call-graph gate: `.claude/settings.json` → `.agents/hooks/adapters/claude.mjs` (workers cannot nest)
+- Specialists: `.claude/agents/` (edit here — single tree)
+- Skills: `.claude/skills/` (edit here — single tree)
+- Decision log: `.claude/memory/decisions.md`
+- Call-graph gate: `.claude/settings.json` → `.claude/hooks/adapters/claude.mjs` (workers cannot nest)
 
-After editing canonical sources under `.agents/`, run `node scripts/sync-tool-adapters.mjs`.
-Drift check: `node scripts/sync-tool-adapters.mjs --check`.
+After editing agents/skills, run `node scripts/sync-tool-adapters.mjs --check` (and `npm test` / `check-agent-kit` as needed).
 Skills inventory (setup runs this): `node scripts/sync-project-skills.mjs` / `--check`.
 ```

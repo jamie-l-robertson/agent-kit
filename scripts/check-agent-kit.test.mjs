@@ -28,16 +28,16 @@ test('assertKitVersion rejects bare semver and missing kit:', () => {
 test('checkDesignSystemAdherence: empty stub requires n/a adherence', () => {
   const root = mkdtempSync(join(tmpdir(), 'akit-ds-'))
   try {
-    mkdirSync(join(root, '.agents', 'rules'), { recursive: true })
+    mkdirSync(join(root, '.claude', 'rules'), { recursive: true })
     writeFileSync(
-      join(root, '.agents', 'rules', 'design-system.md'),
+      join(root, '.claude', 'rules', 'design-system.md'),
       '---\ndescription: stub\n---\n\n# Design system\n\n## Tokens\n\n- Color:\n',
       'utf8',
     )
     const bad = checkDesignSystemAdherence(
       root,
       [
-        '- **Design system**: `.agents/rules/design-system.md`',
+        '- **Design system**: `.claude/rules/design-system.md`',
         '- **Design system adherence**: standard',
       ].join('\n'),
     )
