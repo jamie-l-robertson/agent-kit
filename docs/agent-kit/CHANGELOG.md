@@ -4,9 +4,11 @@ Semantic notes for kit gates/validators (not a full git log). Version: see `.cla
 
 ## Unreleased
 
+- New `researcher` agent — facts, stats, prior art, market/competitor detail, and any external information a task is missing. Audit-only, never implements. **Citations are enforced**: `done` requires a non-empty `sources` array and each entry needs a title plus a `url` or repo/ticket `ref`; nothing citable → `blocked`. Planner tags research-answerable gaps so the manager routes them to `researcher` instead of asking the user
+
 - Hooks: commands use `node "${CLAUDE_PROJECT_DIR}/…"` — the gate no longer depends on hook cwd (Desktop **Code** tab, sub-directory sessions). `mergeClaudeSettings` sweeps any legacy spelling so upgrades replace rather than duplicate the hook
 - Gate: `PreToolUse` no longer force-approves non-denied spawns (it emitted `permissionDecision: "allow"` for every `Agent`/`Task` call, bypassing user permission settings). Deny path unchanged
-- Gate: all ten workers now also carry `disallowedTools: … Agent, Task` — host-native nesting block; the hook stays for the "return to manager" routing message and run-event telemetry
+- Gate: all eleven workers now also carry `disallowedTools: … Agent, Task` — host-native nesting block; the hook stays for the "return to manager" routing message and run-event telemetry
 - **Worker-report gate**: `SubagentStop` validates each kit worker's JSON fence and blocks the stop with the validator's real errors until it is valid. Capped at 2 blocks per agent, then advisory (`additionalContext`) so a bad worker cannot burn the session. Scoped by matcher **and** `PROJECT_AGENTS` check, so `Explore` / `general-purpose` are untouched. Logged as `report-ok` / `report-invalid` run events
 - Settings: `permissions.allow` merged for kit scripts (validator, check, sync) — fewer prompts mid-run; foreign permissions preserved
 - Skill: `manager` restored as the managed entry point (Claude-worded; `disable-model-invocation`)

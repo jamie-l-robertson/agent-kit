@@ -19,7 +19,7 @@ const LEGACY_GATE_RE = /adapters[/\\]claude\.mjs/
  * merge-host-config.test.mjs asserts it stays in sync with PROJECT_AGENTS.
  */
 export const KIT_AGENT_MATCHER =
-  'backend|devops|documenter|frontend|infrastructure|manager|planner|reviewer|risk|security|tester'
+  'backend|devops|documenter|frontend|infrastructure|manager|planner|researcher|reviewer|risk|security|tester'
 
 /** Kit scripts the manager/workers run constantly; allowlisted to cut prompts. */
 export const KIT_PERMISSIONS = [

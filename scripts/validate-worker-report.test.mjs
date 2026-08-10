@@ -320,3 +320,56 @@ test('document rejects product paths in changed', () => {
     true,
   )
 })
+
+const research = {
+  status: 'done',
+  agent: 'researcher',
+  mode: 'audit-only',
+  goal: 'source the 2026 stats',
+  changed: [],
+  recommendNext: 'none',
+  humanApprove: 'n/a',
+  verificationResult: 'n/a',
+  findings: 'Adoption sat at 41% in Q1 [S1].',
+  sources: [{ title: 'Vendor report 2026', url: 'https://example.com/r' }],
+}
+
+test('researcher done requires non-empty sources', () => {
+  assert.equal(validateWorkerReport(research).ok, true)
+  const noSources = { ...research }
+  delete noSources.sources
+  assert.equal(validateWorkerReport(noSources).ok, false)
+  assert.equal(validateWorkerReport({ ...research, sources: [] }).ok, false)
+})
+
+test('researcher is readonly and never implements', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...research,
+      mode: 'implement',
+      changed: ['src/a.ts'],
+      verificationResult: 'pass',
+      evidence: 'x',
+    }).ok,
+    false,
+  )
+})
+
+test('sources entries need a title and a url or ref', () => {
+  const bad = (sources) => validateWorkerReport({ ...research, sources }).ok
+  assert.equal(bad([{ url: 'https://example.com' }]), false, 'title required')
+  assert.equal(bad([{ title: 'No locator' }]), false, 'url or ref required')
+  assert.equal(bad([{ title: 'Repo', ref: '.claude/memory/decisions.md' }]), true)
+  assert.equal(bad(['just a string']), false)
+  assert.equal(bad('not an array'), false)
+})
+
+test('a blocked researcher run needs no sources', () => {
+  const blocked = {
+    ...research,
+    status: 'blocked',
+    needs: 'no primary source found for the 2026 threshold',
+  }
+  delete blocked.sources
+  assert.equal(validateWorkerReport(blocked).ok, true)
+})

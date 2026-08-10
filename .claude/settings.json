@@ -23,7 +23,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "backend|devops|documenter|frontend|infrastructure|manager|planner|reviewer|risk|security|tester",
+        "matcher": "backend|devops|documenter|frontend|infrastructure|manager|planner|researcher|reviewer|risk|security|tester",
         "hooks": [
           {
             "type": "command",

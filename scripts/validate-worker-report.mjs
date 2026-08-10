@@ -30,9 +30,12 @@ const READONLY_DONE_AGENTS = new Set([
   'risk',
   'reviewer',
   'planner',
+  'researcher',
   'manager',
 ])
-const AUDIT_ONLY_AGENTS = new Set(['security', 'risk'])
+const AUDIT_ONLY_AGENTS = new Set(['security', 'risk', 'researcher'])
+/** Agents whose deliverable is unusable without citations */
+const CITING_AGENTS = new Set(['researcher'])
 
 /** Schema required keys — kept in sync with worker-report.schema.json */
 export const SCHEMA_REQUIRED = [
@@ -176,6 +179,34 @@ export function validateWorkerReport(report) {
     }
     if (Array.isArray(report.changed) && report.changed.length > 0) {
       errors.push(`${report.agent} done reports must have changed: []`)
+    }
+  }
+
+  // Uncited research is not research — every claim must be traceable.
+  if (report.sources != null) {
+    if (!Array.isArray(report.sources)) {
+      errors.push('sources must be an array of {title, url|ref, accessed?}')
+    } else {
+      report.sources.forEach((s, i) => {
+        if (!s || typeof s !== 'object' || Array.isArray(s)) {
+          errors.push(`sources[${i}] must be an object`)
+          return
+        }
+        if (typeof s.title !== 'string' || !s.title.trim()) {
+          errors.push(`sources[${i}] requires a non-empty title`)
+        }
+        const locator = s.url ?? s.ref
+        if (typeof locator !== 'string' || !locator.trim()) {
+          errors.push(`sources[${i}] requires a non-empty url or ref`)
+        }
+      })
+    }
+  }
+  if (CITING_AGENTS.has(report.agent) && report.status === 'done') {
+    if (!Array.isArray(report.sources) || report.sources.length === 0) {
+      errors.push(
+        `${report.agent} done requires non-empty sources (cite every claim; use status blocked when nothing citable was found)`,
+      )
     }
   }
 

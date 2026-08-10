@@ -40,7 +40,7 @@ Constraints: <…>
 Report format: JSON worker-report fence (canonical) + short prose summary
 ```
 
-Planner Source briefs may add `Sources:` (see planner). Never brief `security` / `risk` with `Mode: implement`.
+Planner Source briefs may add `Sources:` (see planner). Never brief `security` / `risk` / `researcher` with `Mode: implement`.
 
 ## Required checklist
 
@@ -85,7 +85,8 @@ Brief hygiene:
 - Re-summarizing a planner brief into a thinner one
 - Omitting memory because “the worker can read the log”
 - Omitting Human approve on implement briefs
-- Briefing `security` / `risk` with `Mode: implement`
+- Briefing `security` / `risk` / `researcher` with `Mode: implement`
+- Dispatching an implementer on facts nobody sourced — send `researcher` first when the brief rests on unknown numbers, dates, or external detail
 - Instructing URL fetch via curl, `gh`, WebFetch, or browser
 - Dispatching MCP-dependent work when Required MCP failed prewarm
 - Dispatching implementers from a planner plan before user gap answers / plan approval

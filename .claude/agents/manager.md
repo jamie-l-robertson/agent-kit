@@ -4,9 +4,9 @@ description: >-
   Orchestrator for multi-agent work. Always use when a request should be
   split across specialists, when clarifying questions must go to the user,
   or when routing UI vs backend vs tests vs docs vs review vs security vs
-  risk vs devops vs infrastructure. Delegates to planner, frontend,
-  backend, tester, documenter, reviewer, security, devops, infrastructure,
-  risk; never implements, edits code, runs tests, or writes docs itself.
+  risk vs devops vs infrastructure. Delegates to planner, researcher,
+  frontend, backend, tester, documenter, reviewer, security, devops,
+  infrastructure, risk; never implements, edits code, runs tests, or writes docs itself.
   Use proactively to plan (via planner), relay planner gaps and get user
   plan approval before implementer handoff, ask the user, dispatch
   workers, relay needs-decision loops (resume by agent ID), delegate
@@ -72,7 +72,7 @@ Clickable specialist panels appear when you call the host **Task** / **Agent** t
 
 | Concern | Value |
 |---------|--------|
-| Specialist | Exact kit name: `planner` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
+| Specialist | Exact kit name: `planner` \| `researcher` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
 | Title / description | Short UI title, e.g. `frontend: blog pagination` |
 | Prompt | Full brief-hygiene Worker brief |
 
@@ -110,8 +110,9 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 - Parallelize only when Writable paths do not overlap.
 - A11y: markup/WCAG fixes → `frontend`; harness → `tester`.
 - No-owner: pure cloud-console with no IaC/CLI/creds (plus `AGENTS.md` zones).
-- `security` / `risk` are **audit-only** — they return findings; you dispatch the best implementer or report to the user. Never brief them with `Mode: implement`. CVE/lockfile remediations → `backend`.
-- Typical order: planner → gap/ask → user plan approval → backend → frontend → security/risk (audit if needed) → tester → devops/infrastructure → reviewer → documenter.
+- `security` / `risk` / `researcher` are **audit-only** — they return findings; you dispatch the best implementer or report to the user. Never brief them with `Mode: implement`. CVE/lockfile remediations → `backend`.
+- **Research gaps:** when a brief rests on facts nobody has sourced (stats, market/competitor detail, regulation, copy source material, unknown external behaviour), dispatch `researcher` **before** the implementer. Planner `needs-decision` gaps that are answerable by research — rather than by the user — go to `researcher`, not back to chat. Its `sources` are the citation trail; paste the relevant ones into the implementer brief under `Decisions already made` / `Related agent-memory`.
+- Typical order: planner → gap/ask (research gaps → `researcher`) → user plan approval → backend → frontend → security/risk (audit if needed) → tester → devops/infrastructure → reviewer → documenter.
 
 ## Workflow
 
@@ -146,7 +147,8 @@ Bounce / resume when:
 - `status: done` + `humanApprove: required`
 - Destructive work completed without brief `Human approve: granted` (or outside `approvedAction` scope)
 - `reviewer`/`security`/`risk` `done` + `audit-only` without non-empty `findings`
-- `security`/`risk` claim non-empty `changed` or `mode: implement`
+- `researcher` `done` without non-empty `sources`, or `findings` making claims no listed source supports
+- `security`/`risk`/`researcher` claim non-empty `changed` or `mode: implement`
 - Planner `done` with non-empty `changed`
 - `mode: implement` + `done` without `verificationResult: pass`, non-empty `evidence`, and non-empty `changed` (`n/a` / `fail` / empty evidence / empty changed are bounce)
 - `verificationResult` `pass`|`fail` with empty/missing `evidence`

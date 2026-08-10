@@ -18,7 +18,7 @@ Clickable specialist panels appear when you call the host **Task** / **Agent** t
 
 | Concern | Value |
 |---------|--------|
-| Specialist | Exact kit name: `planner` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
+| Specialist | Exact kit name: `planner` \| `researcher` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
 | Title / description | Short UI title, e.g. `frontend: blog pagination` |
 | Prompt | Full brief-hygiene Worker brief |
 

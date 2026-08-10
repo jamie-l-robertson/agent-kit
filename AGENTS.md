@@ -77,7 +77,7 @@ For Playwright e2e/a11y (when used): attempt first; cold-start / blocked rules �
 
 ## No owner (tell the user)
 
-Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns audit → `security` (fixes via manager → owning implementer; lockfile/CVE bumps → `backend`). PII/compliance audit → `risk`. `reviewer` may flag incidental smells and route via Recommend next.
+Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns audit → `security` (fixes via manager → owning implementer; lockfile/CVE bumps → `backend`). PII/compliance audit → `risk`. Unknown external facts/stats/prior art → `researcher` (cited) before the implementer runs. `reviewer` may flag incidental smells and route via Recommend next.
 
 <!-- CUSTOMIZE: add project-specific no-owner zones here. -->
 
@@ -87,6 +87,7 @@ Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — d
 |-------|---------|
 | `manager` | Orchestration, user Q&A, planner gap relay + plan approval before implementers (readonly); MCP prewarm |
 | `planner` | Plans for multi-step / multi-domain / issue-backed / non-trivial managed work (plus direct plan-only asks); manager may fast-path trivial single-owner; gap scan + UI design exists/align/understanding check; architecture-review skill; MCP-only GitHub/Jira (+ children); manager-passed agent-memory (readonly); returns plan for manager→user approval |
+| `researcher` | Facts, stats, prior art, market/competitor detail, missing external information (`audit-only`; every claim cited in `sources`) |
 | `frontend` | UI, layout, styling, motion; a11y-wcag + perf-audit skills |
 | `backend` | CMS/schema, server actions, API, server libs; perf-audit for queries |
 | `tester` | Tests, coverage, harness (no production fixes) |
@@ -99,7 +100,7 @@ Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — d
 
 Dependency / lockfile / CVE **remediation** (after `security` audit) → `backend`. Auth product fixes may also go `backend` / `frontend` per ownership.
 
-`manager` · `planner` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — edit under `.claude/agents/`. Optional per-agent `model:` in those files (kit default `inherit`). **Destructive** work requires brief `Human approve: granted`.
+`manager` · `planner` · `researcher` · `frontend` · `backend` · `tester` · `reviewer` · `documenter` · `security` · `devops` · `infrastructure` · `risk` — edit under `.claude/agents/`. Optional per-agent `model:` in those files (kit default `inherit`). **Destructive** work requires brief `Human approve: granted`.
 
 Call-graph gate: `.claude/hooks/` — hard deny of worker nesting on **Claude Code** (plus `disallowedTools: Agent, Task` on every worker). The same adapter runs a **worker-report gate** on `SubagentStop`: a worker's JSON fence must validate or the worker is sent back, capped at 2 retries.
 

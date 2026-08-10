@@ -28,12 +28,29 @@
         "backend",
         "tester",
         "documenter",
+        "researcher",
         "reviewer",
         "security",
         "devops",
         "infrastructure",
         "risk"
       ]
+    },
+    "sources": {
+      "type": "array",
+      "description": "Citations backing every claim. Required non-empty for researcher done.",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "minLength": 1 },
+          "accessed": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "anyOf": [{ "required": ["url"] }, { "required": ["ref"] }]
+      }
     },
     "mode": {
       "type": "string",

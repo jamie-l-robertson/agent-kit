@@ -48,7 +48,8 @@ Rules:
 - `status: done` with `humanApprove: required` is invalid (use `needs-decision`)
 - `blocked` ⇒ non-empty `needs` or `evidence`
 - `recommendNext` must be a non-empty string (use `"none"` on done)
-- Readonly agents on `done` (`reviewer`, `security`, `risk`, `planner`, `manager`) ⇒ `mode: audit-only` and `changed: []`
+- Readonly agents on `done` (`reviewer`, `security`, `risk`, `planner`, `researcher`, `manager`) ⇒ `mode: audit-only` and `changed: []`
+- `researcher` on `done` ⇒ non-empty `sources` (each `{ title, url|ref, accessed? }`); nothing citable → `blocked`
 - `mode: verify-only` ⇒ `changed: []` (no file writes; do not list product paths)
 - `mode: document` ⇒ `changed` paths only under docs/memory/stack cards (`docs/`, `.claude/memory/`, `.claude/**/*.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`)
 - Audit findings agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` ⇒ non-empty `findings` (use `"none"` if clean)

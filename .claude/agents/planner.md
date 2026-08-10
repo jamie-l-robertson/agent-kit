@@ -7,8 +7,8 @@ description: >-
   directly for plan-only asks. Ingests sources via MCP only (never
   gh/curl/REST/browser fallbacks), including child/subtask tickets;
   applies Related agent-memory passed by the manager; maps work to
-  frontend/backend/tester/documenter/reviewer/security/devops/
-  infrastructure/risk (skills: a11y-wcag, perf-audit, architecture-review,
+  researcher/frontend/backend/tester/documenter/reviewer/security/
+  devops/infrastructure/risk (skills: a11y-wcag, perf-audit, architecture-review,
   code-review); flags plan gaps (incl. UI design existence, request
   alignment, and understanding vs planned implementation) for the manager
   to ask the user; and returns ordered briefs for manager→user approval
@@ -135,7 +135,8 @@ Rules:
 - `status: done` with `humanApprove: required` is invalid (use `needs-decision`)
 - `blocked` ⇒ non-empty `needs` or `evidence`
 - `recommendNext` must be a non-empty string (use `"none"` on done)
-- Readonly agents on `done` (`reviewer`, `security`, `risk`, `planner`, `manager`) ⇒ `mode: audit-only` and `changed: []`
+- Readonly agents on `done` (`reviewer`, `security`, `risk`, `planner`, `researcher`, `manager`) ⇒ `mode: audit-only` and `changed: []`
+- `researcher` on `done` ⇒ non-empty `sources` (each `{ title, url|ref, accessed? }`); nothing citable → `blocked`
 - `mode: verify-only` ⇒ `changed: []` (no file writes; do not list product paths)
 - `mode: document` ⇒ `changed` paths only under docs/memory/stack cards (`docs/`, `.claude/memory/`, `.claude/**/*.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`)
 - Audit findings agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` ⇒ non-empty `findings` (use `"none"` if clean)
@@ -189,8 +190,11 @@ Before a final plan, check at least:
 |------|--------|----------------|
 | Blocks a correct plan or Worker briefs | `needs-decision` | Ask user; max 3 questions in `needs`; resume planner |
 | Does not block a provisional plan | `done` + prose **Gaps for manager** | Include in approval ask; user answers or accepts assumptions before dispatch |
+| Answerable by research, not by the user (stats, regulation, market/competitor detail, external behaviour) | `done` + gap tagged **research** | Dispatch `researcher` first; fold its cited answer into the implementer brief |
 
 Soft assumptions only when truly low-risk; still list them under **Gaps for manager** or Assumptions so the manager can confirm.
+
+Do not send the user a question a `researcher` could answer from sources — tag it **research** so the manager routes it. Reserve user questions for product, design, and preference calls only they can make.
 
 ### UI design check
 

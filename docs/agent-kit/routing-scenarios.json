@@ -196,5 +196,25 @@
       "backend",
       "security"
     ]
+  },
+  {
+    "id": 22,
+    "ask": "Landing page copy needs 2026 market stats and a competitor comparison nobody has sourced",
+    "primary": "researcher",
+    "model": "inherit",
+    "expect": [
+      "researcher",
+      "frontend"
+    ]
+  },
+  {
+    "id": 23,
+    "ask": "Which Postgres client library the team should adopt (prior art / tradeoffs), not its API syntax",
+    "primary": "researcher",
+    "model": "inherit",
+    "expect": [
+      "researcher",
+      "backend"
+    ]
   }
 ]

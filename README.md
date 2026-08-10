@@ -8,7 +8,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 
 | Path | Role |
 |------|------|
-| `.claude/agents/` | Specialists (`manager`, `planner`, `frontend`, …) — edit here |
+| `.claude/agents/` | Specialists (`manager`, `planner`, `researcher`, `frontend`, …) — edit here |
 | `.claude/skills/` | `manager`, `setup`, `sync-project-skills`, `agent-memory`, `brief-hygiene`, `verify-evidence`, `issue-intake`, … — edit here |
 | `.claude/settings.json` | Claude hooks → `.claude/hooks/adapters/claude.mjs` |
 | `.claude/protocols/` | Shared worker protocol variants (docs / compose helpers; already expanded into agents) |
@@ -34,6 +34,7 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | Decision memory | `.claude/memory/` |
 | Call-graph gate (no worker nesting) | **hard** ×2 (agent `disallowedTools: Agent, Task` + hooks with a routing message; session-scoped state) |
 | Worker-report gate (valid JSON fence) | **hard** (`SubagentStop` blocks until schema-valid, capped at 2 retries then advisory) |
+| Cited research (`researcher`) | **hard** (`done` requires non-empty `sources`; each needs a title + url/ref) |
 | Readonly agents (no file writes) | **soft** (`disallowedTools: Write, Edit, NotebookEdit`; Bash may remain) |
 | Sync / install safety | Install copies `.claude/`; merges `settings.json` (does not wipe foreign entries); docs → `docs/agent-kit/` |
 | Health check | `node scripts/check-agent-kit.mjs` (roster/settings check + Claude gate smoke + validator) |

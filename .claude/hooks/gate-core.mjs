@@ -39,6 +39,7 @@ export const STATE_PATH = DEFAULT_STATE_PATH
 export const MANAGER = 'manager'
 export const WORKERS = new Set([
   'planner',
+  'researcher',
   'frontend',
   'backend',
   'tester',

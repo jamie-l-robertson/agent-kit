@@ -52,6 +52,8 @@ Every member of `WORKERS` in `.claude/hooks/gate-core.mjs` plus `manager` must a
 | 16 | Pure cloud-console DNS, no IaC/CLI | no-owner | n/a | no-owner |
 | 17 | Mixed: API email field + UI form | `planner` order | `inherit` | planner, backend, frontend, risk, tester, reviewer |
 | 20 | Vulnerable dep upgrade after security audit | `backend` (security audited) | `inherit` | backend, security |
+| 22 | Landing copy needs 2026 market stats + competitor comparison nobody sourced | `researcher` → `frontend` | `inherit` | researcher, frontend |
+| 23 | Which Postgres client library to adopt (prior art / tradeoffs, not API syntax) | `researcher` → `backend` | `inherit` | researcher, backend (API syntax via Context7, not researcher) |
 
 ## Result log template
 
