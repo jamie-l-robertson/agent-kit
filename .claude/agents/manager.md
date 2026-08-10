@@ -73,10 +73,18 @@ Clickable specialist panels appear when you call the host **Task** / **Agent** t
 | Concern | Value |
 |---------|--------|
 | Specialist | Exact kit name: `planner` \| `researcher` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
-| Title / description | Short UI title, e.g. `frontend: blog pagination` |
+| Title / description | **`<agent>: <task>`** — the agent name comes first, always. e.g. `frontend: blog pagination`, `researcher: 2026 market stats` |
 | Prompt | Full brief-hygiene Worker brief |
 
 Prefer foreground / blocking spawns so users can open the worker. Prefer **fast-path** when eligible to cut orchestration latency.
+
+**The spawn title is the only thing the user sees while work runs — it must name the specialist.** A title that omits the agent leaves the user watching an anonymous panel.
+
+| Bad | Good |
+|-----|------|
+| `Manager dispatched` | `frontend: secret-level page` |
+| `Dispatching worker` | `researcher: episode synopsis sources` |
+| `Working on the task` | `tester: pagination regression` |
 
 **Forbidden stand-ins:** generic explorers or one mega-Task that does the whole feature under a non-kit type.
 

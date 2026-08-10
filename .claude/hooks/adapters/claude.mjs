@@ -130,7 +130,14 @@ try {
     process.exit(0)
   }
 
-  // SubagentStart / SubagentStop / SessionStart / SessionEnd — record/clear only
+  // Name the specialist the moment it starts, so "dispatched" is never anonymous
+  // even when the spawn title is vague.
+  if (event === 'SubagentStart' && PROJECT_AGENTS.has(normalized.target)) {
+    write({ systemMessage: `▶ ${normalized.target} started` })
+    process.exit(0)
+  }
+
+  // SubagentStop / SessionStart / SessionEnd — record/clear only
   noop()
 } catch (err) {
   const msg = `gate-subagents: ${err instanceof Error ? err.message : String(err)}`

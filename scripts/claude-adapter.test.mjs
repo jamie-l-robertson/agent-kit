@@ -193,3 +193,33 @@ test('invalid stdin denies rather than crashing', () => {
   const out = JSON.parse(r.stdout.trim())
   assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
 })
+
+test('SubagentStart names the specialist for the user', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStart',
+        session_id: 's1',
+        agent_id: 'fe-1',
+        agent_type: 'frontend',
+      },
+      dir,
+    )
+    assert.match(out.systemMessage, /frontend/)
+  })
+})
+
+test('SubagentStart stays quiet for non-kit agents', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStart',
+        session_id: 's1',
+        agent_id: 'ex-1',
+        agent_type: 'Explore',
+      },
+      dir,
+    )
+    assert.deepEqual(out, {}, 'no chatter for built-in agents')
+  })
+})
