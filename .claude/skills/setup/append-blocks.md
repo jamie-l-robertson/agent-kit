@@ -47,10 +47,11 @@ Paste from kit `AGENTS.md` section **## Agents & routing** (full table including
 
 - Decisions: `.claude/memory/decisions.md` (product/design choices)
 - MCP usage: `.claude/memory/mcp-usage.md` (server/tool/outcome only — not decisions)
+- Tasks: `.claude/memory/tasks.md` (recent worker outcomes + token counts; gate hook; skim only — archive under `tasks-archive/`)
 - Skills inventory: `.claude/memory/skills-inventory.md` (from `node scripts/sync-project-skills.mjs`)
 - Install keep-audit: `.claude/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
 - Skill: `.claude/skills/agent-memory/SKILL.md`
-- **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the target log
+- **manager** (readonly) reads only; **documenter** appends decisions/mcp-usage when briefed; **gate** appends tasks.md
 ```
 
 ---

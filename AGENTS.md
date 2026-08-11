@@ -25,7 +25,7 @@ Quick reference for subagents. Prefer this over rediscovering the stack each run
 - **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
 - **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
 - **Rules**: always-on under `.claude/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
-- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — none. Inventory: `.claude/memory/skills-inventory.md`.
+- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `browser-test`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — `grill-with-docs`, `simplify`, `to-issues`. Inventory: `.claude/memory/skills-inventory.md`.
 
 ### Resolving Design system / standards refs
 
@@ -110,7 +110,8 @@ Routing regression drills: [`docs/agent-kit/routing-scenarios.md`](docs/agent-ki
 
 - Decisions: `.claude/memory/decisions.md` (product/design choices)
 - MCP usage: `.claude/memory/mcp-usage.md` (server/tool/outcome only — not decisions)
+- Tasks: `.claude/memory/tasks.md` (recent worker outcomes + token counts; gate hook; skim only — archive under `tasks-archive/`)
 - Skills inventory: `.claude/memory/skills-inventory.md` (from `node scripts/sync-project-skills.mjs`)
 - Install keep-audit: `.claude/memory/install-audit.md` (when install kept project `AGENTS.md` / `CLAUDE.md`)
 - Skill: `.claude/skills/agent-memory/SKILL.md`
-- **manager** (readonly) reads only; **documenter** appends when briefed with `Writable paths` limited to the target log
+- **manager** (readonly) reads only; **documenter** appends decisions/mcp-usage when briefed; **gate** appends tasks.md

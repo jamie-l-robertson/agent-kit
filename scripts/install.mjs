@@ -45,6 +45,7 @@ const MEMORY_PRESERVE = [
   'install-audit.md',
   'decisions.md',
   'mcp-usage.md',
+  'tasks.md',
 ]
 
 const RULE_KEEP_NAMES = [

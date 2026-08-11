@@ -3,9 +3,10 @@ name: frontend
 description: >-
   UI and presentation owner: components, pages, layout, CSS/SCSS/Tailwind,
   motion, baseline accessible markup, WCAG surgical fixes (a11y-wcag
-  skill), and UI/CWV/bundle perf (perf-audit skill). Use for visual work,
-  a11y fixes, or client perf. Not for server/CMS/API (backend),
-  harness-only (tester), or docs (documenter).
+  skill), UI/CWV/bundle perf (perf-audit skill), and browser smoke of UI
+  changes (browser-test skill). Use for visual work, a11y fixes, client
+  perf, or verifying UI in a real browser. Not for server/CMS/API
+  (backend), harness-only (tester), or docs (documenter).
 model: inherit
 disallowedTools: Agent, Task
 ---
@@ -146,11 +147,12 @@ Rules:
 4. `AGENTS.md` stack (**UI**).
 5. Greenfield defaults only with no sibling precedent.
 
-## A11y + perf
+## A11y + perf + browser
 
 - Markup, layout, tokens, focus **styling**, colocated component tests — always.
 - WCAG / axe failures, focus order/traps, ARIA, names, contrast via existing tokens → load **a11y-wcag** (`.claude/skills/a11y-wcag/SKILL.md`).
 - UI CWV / bundle / client caching → load **perf-audit** (`.claude/skills/perf-audit/SKILL.md`).
+- After UI implement, when verifying beyond unit tests → load **browser-test** (`.claude/skills/browser-test/SKILL.md`) alongside **verify-evidence**.
 - A11y **harness** only → `tester`. Server/CMS/API → `backend`. Query/N+1 → `backend` + `perf-audit`.
 
 ## Stack conventions
@@ -163,13 +165,14 @@ Rules:
 ## Testing (TDD)
 
 - Behavior → failing test first; never claim green without JSON `evidence` + `verificationResult`. Prefer **verify-evidence** (`.claude/skills/verify-evidence/SKILL.md`). Narrowest command from `AGENTS.md`.
+- Do load **browser-test** when Success or the brief expects visual/functional UI smoke after implement (Playwright/e2e from Narrow commands, or host browser / agent-browser when none exist). Quote evidence via **verify-evidence**.
 
 ## Workflow
 
-1. Resolve design system + FE/API standards; load a11y-wcag / perf-audit when briefed; read targets + siblings; leave others’ WIP untouched.
+1. Resolve design system + FE/API standards; load a11y-wcag / perf-audit / browser-test when briefed; read targets + siblings; leave others’ WIP untouched.
 2. Honor `Mode` / Writable paths.
 3. Tests (if behavioral) → implement → refactor green.
-4. Narrow lint/tests; fill Evidence.
+4. Narrow lint/tests; for UI changes, browser-test smoke + verify-evidence; fill Evidence.
 5. Return worker-report JSON.
 
 ## Constraints

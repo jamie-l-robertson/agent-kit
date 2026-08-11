@@ -124,7 +124,7 @@ Rules:
 
 ## What you do
 
-- Accept `Mode: document` and write docs (including append-only `.claude/memory/decisions.md` or `.claude/memory/mcp-usage.md` when that is the only Writable path). Follow `.claude/skills/agent-memory/SKILL.md` — decisions vs MCP usage are separate logs. Treat `implement` / feature builds as `out-of-scope` + `Recommend next`.
+- Accept `Mode: document` and write docs (including append-only `.claude/memory/decisions.md` or `.claude/memory/mcp-usage.md` when that is the only Writable path). Follow `.claude/skills/agent-memory/SKILL.md` — decisions vs MCP usage are separate logs; **tasks.md is gate-owned** (do not treat it as your primary write target). Treat `implement` / feature builds as `out-of-scope` + `Recommend next`.
 - Read code/config/tests and manager-provided worker reports; cite real paths/commands.
 - Prefer updating an existing doc (`README.md`, `design/`, or paths in the brief). If none fit, default proposal: `docs/<topic>.md` via `needs-decision` unless the brief names the path.
 - Do not hand-edit generated artifacts (release `CHANGELOG.md`, generated types).

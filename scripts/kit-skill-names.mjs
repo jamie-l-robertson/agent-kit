@@ -4,6 +4,7 @@ export const KNOWN_KIT_SKILL_NAMES = new Set([
   'setup',
   'brief-hygiene',
   'verify-evidence',
+  'browser-test',
   'issue-intake',
   'a11y-wcag',
   'perf-audit',

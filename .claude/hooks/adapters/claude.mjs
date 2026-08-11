@@ -18,6 +18,7 @@ import {
   PROJECT_AGENTS,
   MAX_REPORT_BLOCKS,
 } from '../gate-core.mjs'
+import { appendTaskMemory, resolveTokenCount } from '../task-log.mjs'
 import {
   extractWorkerReportJson,
   validateWorkerReport,
@@ -63,12 +64,19 @@ function handleSubagentStop(payload) {
     : { ok: false, errors: ['missing worker-report JSON fence'] }
 
   if (result.ok) {
+    const tokens = resolveTokenCount(report, payload)
+    appendTaskMemory(report, { sessionId: sessionId || undefined, tokens })
     appendRunEvent({
-      event: 'report-ok',
+      event: 'report',
       sessionId: sessionId || null,
       role: agentType,
       agent: agentType,
-      status: 'ok',
+      status: String(report.status || 'ok'),
+      goal: String(report.goal || ''),
+      verificationResult: String(report.verificationResult || 'n/a'),
+      tokens,
+      changed: Array.isArray(report.changed) ? report.changed : [],
+      validatorOk: true,
       hookEvent: 'SubagentStop',
     })
     return false

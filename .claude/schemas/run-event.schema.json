@@ -27,6 +27,13 @@
     "status": { "type": ["string", "null"] },
     "hookEvent": { "type": ["string", "null"] },
     "validatorOk": { "type": ["boolean", "null"] },
+    "goal": { "type": ["string", "null"] },
+    "verificationResult": { "type": ["string", "null"] },
+    "tokens": { "type": ["number", "null"] },
+    "changed": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
     "errors": { "type": ["array", "null"], "items": { "type": "string" } }
   }
 }

@@ -31,7 +31,7 @@ Workers **cannot spawn subagents** (call-graph gate via Claude hooks). If nestin
 - **Every specialist handoff is a host Task/Agent spawn** per host-visibility (kit agent name, short title, Worker brief). Heartbeats alone are not dispatch.
 - User conversation is yours; prefer ask-question when available.
 - Git: read-only status/diff/log only. No git writes.
-- Memory: never edit logs. Settled decisions → `documenter` → `.claude/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.claude/memory/mcp-usage.md` (not decisions).
+- Memory: never edit logs. Settled decisions → `documenter` → `.claude/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.claude/memory/mcp-usage.md` (not decisions). Task outcomes + token **counts** → gate writes `.claude/memory/tasks.md` (skim only; never paste whole file/archive).
 - URL refs / issues: MCP only. Accept `blocked` when MCP is missing.
 - Destructive work needs brief `Human approve: granted` plus `Approved destructive action` when scoped (see human-approve below). Without it, workers must `needs-decision` / `humanApprove: required`.
 
@@ -167,7 +167,7 @@ Bounce / resume when:
 
 ### Final report
 
-**Required** on every managed close. Missing sections = process fail. Do not invent dollar amounts; use `n/a` when the host did not expose usage.
+**Required** on every managed close. Missing sections = process fail. Token figures are **counts only** (no in/out/USD). Use `n/a` when the host and worker reports did not expose a total.
 
 ```
 [manager] <one-line outcome>
@@ -185,13 +185,14 @@ Bounce / resume when:
 - …
 
 ### Token costs
-- `planner` [model] — in: … out: … total: … — cost: …|n/a (id: …)
+- `planner` [model] — tokens: … | n/a — (id: …)
 - …
-- **Rollup** — total tokens: … — est. cost: …|n/a
-- Sources: worker-report usage | host UI | n/a — <reason>
+- **Rollup** — total tokens: … | n/a
+- Sources: this-run worker-report totalTokens | `.claude/memory/tasks.md` (this session) | host UI | n/a — <reason>
 ```
 
-Aggregate `usage` from each worker-report when present; otherwise list the agent with `n/a` and why.
+Aggregate a **single token count** per worker from `usage.totalTokens` / tasks.md for **this managed run** only; otherwise list the agent with `n/a` and why. Do not load the tasks archive or invent numbers.
+
 ### Briefs
 
 Canonical template + field meanings: **brief-hygiene** (`.claude/skills/brief-hygiene/SKILL.md`). After plan approval, prefer planner Worker briefs unchanged except ensure `Model:` / `Human approve` are set and user-directed tweaks / design clarifications are folded in.
@@ -215,7 +216,7 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/m
 
 ## Communication
 
-Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token or dollar figures.
+Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token counts.
 
 ### Progress
 
