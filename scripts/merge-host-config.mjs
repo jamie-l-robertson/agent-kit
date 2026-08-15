@@ -29,6 +29,9 @@ export const KIT_PERMISSIONS = [
   'Bash(node scripts/sync-project-skills.mjs:*)',
 ]
 
+/** Secrets stay out of agent context — names and refs only. */
+export const KIT_DENY = ['Read(./.env)', 'Read(./.env.*)']
+
 /**
  * @param {string} root project root
  * @param {{ failOnInvalidJson?: boolean }} [opts]
@@ -98,6 +101,12 @@ export function mergeClaudeSettings(root, { failOnInvalidJson = true } = {}) {
     if (!allow.includes(rule)) allow.push(rule)
   }
   permissions.allow = allow
+
+  const deny = Array.isArray(permissions.deny) ? [...permissions.deny] : []
+  for (const rule of KIT_DENY) {
+    if (!deny.includes(rule)) deny.push(rule)
+  }
+  permissions.deny = deny
 
   existing.hooks = hooks
   existing.permissions = permissions

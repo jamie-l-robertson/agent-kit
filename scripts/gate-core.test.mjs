@@ -27,6 +27,11 @@ import {
   PROJECT_AGENTS,
   FALLBACK_SESSION,
   lockPath,
+  setPlanPending,
+  readPlanApproval,
+  approvePlan,
+  planGateEnabled,
+  PLAN_SUMMARY_MAX,
 } from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -909,4 +914,43 @@ test('Cursor root→manager and manager→worker allow on preToolUse; worker nes
     }),
   )
   assert.equal(nest.action, 'deny')
+})
+
+// --- plan gate (Phase 1) ---
+
+test('planApproval + planSummary survive a subsequent saveState', () => {
+  setPlanPending('s1', 'ship the thing')
+  // Any later hook event does load → mutate → save; the flag must not be dropped.
+  const state = loadState()
+  rememberRole(state, 'fe-1', 'frontend', 's1')
+  saveState(state)
+  assert.deepEqual(readPlanApproval('s1'), {
+    planApproval: 'pending',
+    planSummary: 'ship the thing',
+  })
+})
+
+test('planSummary is capped, not widened', () => {
+  setPlanPending('s1', 'x'.repeat(PLAN_SUMMARY_MAX + 200))
+  assert.equal(readPlanApproval('s1').planSummary.length, PLAN_SUMMARY_MAX)
+})
+
+test('approvePlan flips pending → approved and is idempotent', () => {
+  setPlanPending('s1', 'plan')
+  approvePlan('s1')
+  assert.equal(readPlanApproval('s1').planApproval, 'approved')
+  approvePlan('s1')
+  assert.equal(readPlanApproval('s1').planApproval, 'approved')
+})
+
+test('approvePlan on a session with no pending plan stays undefined', () => {
+  approvePlan('s-none')
+  assert.equal(readPlanApproval('s-none').planApproval, undefined)
+})
+
+test('planGateEnabled honors AGENT_KIT_PLAN_GATE=off', () => {
+  assert.equal(planGateEnabled(), true)
+  process.env.AGENT_KIT_PLAN_GATE = 'off'
+  assert.equal(planGateEnabled(), false)
+  delete process.env.AGENT_KIT_PLAN_GATE
 })

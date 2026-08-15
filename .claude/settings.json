@@ -59,6 +59,10 @@
       "Bash(node scripts/check-agent-kit.mjs:*)",
       "Bash(node scripts/sync-tool-adapters.mjs:*)",
       "Bash(node scripts/sync-project-skills.mjs:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
     ]
   }
 }

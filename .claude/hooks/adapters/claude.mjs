@@ -17,6 +17,12 @@ import {
   bumpReportBlock,
   PROJECT_AGENTS,
   MAX_REPORT_BLOCKS,
+  PLAN_GATE_IMPLEMENTERS,
+  MANAGER,
+  planGateEnabled,
+  setPlanPending,
+  readPlanApproval,
+  approvePlan,
 } from '../gate-core.mjs'
 import { appendTaskMemory, resolveTokenCount } from '../task-log.mjs'
 import {
@@ -40,6 +46,43 @@ function denyPreToolUse(reason) {
 
 function noop() {
   write({})
+}
+
+/**
+ * Plan gate: planner's plan is approved once, at the first implementer spawn.
+ * Advisory by design — it never denies, and every failure falls through to
+ * normal permission handling. The nest gate above stays fail-closed.
+ */
+function planGateSafe(fn) {
+  if (!planGateEnabled()) return false
+  try {
+    return fn()
+  } catch {
+    return false
+  }
+}
+
+function planSummaryOf(report) {
+  const next = String(report.recommendNext || '').trim()
+  return `Plan: ${String(report.goal || '').trim()}${next && next !== 'none' ? `\nNext: ${next}` : ''}`
+}
+
+/** @returns {boolean} true when an ask was written */
+function askPlanApproval(normalized) {
+  return planGateSafe(() => {
+    if (normalized.callerAgentType !== MANAGER) return false
+    if (!PLAN_GATE_IMPLEMENTERS.has(normalized.target)) return false
+    const { planApproval, planSummary } = readPlanApproval(normalized.sessionId)
+    if (planApproval !== 'pending') return false
+    write({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'ask',
+        permissionDecisionReason: `Approve this plan before \`${normalized.target}\` starts?\n\n${planSummary}`,
+      },
+    })
+    return true
+  })
 }
 
 const REPORT_HINT =
@@ -79,6 +122,9 @@ function handleSubagentStop(payload) {
       validatorOk: true,
       hookEvent: 'SubagentStop',
     })
+    if (agentType === 'planner' && String(report.status) === 'done') {
+      planGateSafe(() => setPlanPending(sessionId, planSummaryOf(report)))
+    }
     return false
   }
 
@@ -131,7 +177,7 @@ try {
   if (event === 'PreToolUse') {
     if (result.action === 'deny') {
       denyPreToolUse(result.message || 'Blocked by call-graph gate')
-    } else {
+    } else if (!askPlanApproval(normalized)) {
       // Never force-allow: let normal permission handling run.
       noop()
     }
@@ -140,9 +186,16 @@ try {
 
   // Name the specialist the moment it starts, so "dispatched" is never anonymous
   // even when the spawn title is vague.
-  if (event === 'SubagentStart' && PROJECT_AGENTS.has(normalized.target)) {
-    write({ systemMessage: `▶ ${normalized.target} started` })
-    process.exit(0)
+  if (event === 'SubagentStart') {
+    // The host never reports how the user answered the ask — the implementer
+    // actually starting is the only "approved" signal available.
+    if (PLAN_GATE_IMPLEMENTERS.has(normalized.target)) {
+      planGateSafe(() => approvePlan(normalized.sessionId))
+    }
+    if (PROJECT_AGENTS.has(normalized.target)) {
+      write({ systemMessage: `▶ ${normalized.target} started` })
+      process.exit(0)
+    }
   }
 
   // SubagentStop / SessionStart / SessionEnd — record/clear only

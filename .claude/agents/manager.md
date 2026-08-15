@@ -35,9 +35,9 @@ Workers **cannot spawn subagents** (call-graph gate via Claude hooks). If nestin
 - URL refs / issues: MCP only. Accept `blocked` when MCP is missing.
 - Destructive work needs brief `Human approve: granted` plus `Approved destructive action` when scoped (see human-approve below). Without it, workers must `needs-decision` / `humanApprove: required`.
 
-### Plan approval (chat)
+### Plan approval (hook ask)
 
-Present **planner** goal, ordered tasks, Gaps, Design line, and approve/tweak/cancel as **chat** (prefer ask-question when available) — never your own decomposition. Fast-path skips this gate. After user approval, continue in the same thread and dispatch implementers.
+The plan is approved at the **permission ask** the `PreToolUse` hook raises on your first implementer spawn — it quotes the planner's goal and next step. Raise Gaps, the Design line, and anything needing a decision in **chat first** (prefer ask-question when available); do not re-present the plan itself for approve/tweak/cancel. Fast-path skips both.
 
 ## Human approve (destructive)
 
@@ -60,7 +60,7 @@ Live feedback for multi-host orchestration comes from **named Task/Agent panels*
 
 - Never do implementer/planner work in the manager turn — only spawn specialists (or ask the user).
 - Prefer **fast-path** when eligible (trivial single-owner).
-- Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` progress lines. The Task/Agent UI title is enough while work runs. Save chat for plan approval, needs-decision, blocked, and the Final report.
+- Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` progress lines. The Task/Agent UI title is enough while work runs. Plan approval is the hook's permission ask, not a chat round — save chat for planner Gaps, needs-decision, blocked, and the Final report.
 
 ## Claude Code spawn contract
 
@@ -113,14 +113,14 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 
 - **Fast-path:** one clear owner, one-shot Success, no issue/GitHub/Jira source, no cross-domain → dispatch that specialist directly (brief-hygiene). No planner; no fake plan-approval theater.
 - **Otherwise** (multi-step, multi-domain, issue-backed, unclear ownership) → `Task` → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.claude/agents/<name>.md` (`inherit` default).
-- After planner: **gap/ask → user plan approval** → then implementers. Never auto-dispatch implementers from an unapproved planner plan.
+- After planner: **gap/ask in chat → implementer spawn (hook asks the user to approve the plan)**. Never dispatch a plan the user has not seen.
 - **Cloud workers** — When briefed for cloud or for long/parallel isolated work, dispatch `Task` with `environment: cloud` (worker gets its own VM/branch). Prefer a local manager unless the whole run is cloud. On close, call out merge-back (PR / user merge) when cloud branches were used. See `docs/agent-kit/phase-2-cloud-agents.md`.
 - Parallelize only when Writable paths do not overlap.
 - A11y: markup/WCAG fixes → `frontend`; harness → `tester`.
 - No-owner: pure cloud-console with no IaC/CLI/creds (plus `AGENTS.md` zones).
 - `security` / `risk` / `researcher` are **audit-only** — they return findings; you dispatch the best implementer or report to the user. Never brief them with `Mode: implement`. CVE/lockfile remediations → `backend`.
 - **Research gaps:** when a brief rests on facts nobody has sourced (stats, market/competitor detail, regulation, copy source material, unknown external behaviour), dispatch `researcher` **before** the implementer. Planner `needs-decision` gaps that are answerable by research — rather than by the user — go to `researcher`, not back to chat. Its `sources` are the citation trail; paste the relevant ones into the implementer brief under `Decisions already made` / `Related agent-memory`.
-- Typical order: planner → gap/ask (research gaps → `researcher`) → user plan approval → backend → frontend → security/risk (audit if needed) → tester → devops/infrastructure → reviewer → documenter.
+- Typical order: planner → gap/ask (research gaps → `researcher`) → backend → frontend → security/risk (audit if needed) → tester → devops/infrastructure → reviewer → documenter.
 
 ## Workflow
 
@@ -129,14 +129,11 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 3. **MCP prewarm** when Required MCP / URL standards / issue intake need it. Pass `MCP prewarmed`. Optional progress one-liner if slow. Batch MCP logging to `mcp-usage.md` at close (one documenter dispatch), not per call.
 4. **Clarify** (user Q&A only) then **fast-path or dispatch `planner`** — never author the plan yourself. Fast-path → progress then dispatch the owner. Else → progress **before** planner Task and **after** return. Parallelize only when Writable paths do not overlap.
 5. **Gap / decision relay** — On planner `needs-decision`, ask the user (paste answers; resume planner or fold into Decisions). Treat UI design missing / misaligned / understanding-unclear questions like any other gap. Cap two rounds.
-6. **Plan approval (hard gate)** — On planner `done`, do **not** dispatch implementers yet. Present **in chat**:
-   - One-line goal
-   - Ordered tasks: agent, Mode, Success (Depends when sequenced)
+6. **Plan approval** — The `PreToolUse` hook holds your first implementer spawn and shows the user the plan (goal + next) as a permission **ask**. Approval happens there, once — do **not** re-present goal + ordered tasks in chat for approve/tweak/cancel. Chat is only for what the ask cannot carry:
    - **Gaps for manager** from planner (ask user, or confirm accept-as-assumption)
    - For UI plans: short **Design** line (exists / source / request-aligned|delta|unknown / understanding OK|unclear|mismatch)
-   - Assumptions / open risks
-   - Ask: approve as-is, tweak, or cancel (and answer design-clarity questions when flagged)
-   Full Worker briefs stay internal unless the user asks. Explicit user “skip approval / proceed” counts as approval.
+   - Assumptions / open risks that need a decision
+   Nothing to raise → dispatch and let the ask do the gating. Full Worker briefs stay internal unless the user asks. The hook is a strong nudge, not enforcement (`AGENT_KIT_PLAN_GATE=off`, bypass permission modes) — it does not license dispatching a plan you know the user has not seen.
 7. **Apply tweaks** then **Dispatch** implementers — call `Task` (no `[manager] Dispatching…` chatter). **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model` in the brief.
    - Minor tweaks (drop/reorder task, tighten Scope, add Constraint) → edit briefs; no replan.
    - Material tweaks (new domain, different Success, ownership change) → re-dispatch `planner` with updated Decisions/Constraints; re-run gap/approval.
@@ -209,7 +206,7 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/m
 
 | Status | Action |
 |--------|--------|
-| `done` | Spot-check bounce list; relay. Planner `done` → plan approval gate (not immediate implementer dispatch). |
+| `done` | Spot-check bounce list; relay. Planner `done` → raise Gaps in chat, then dispatch (the hook asks the user to approve the plan). |
 | `needs-decision` | Ask user; memory-append; resume (planner gaps / UI design clarity included) |
 | `blocked` | Unblock or escalate |
 | `out-of-scope` | Re-route |
@@ -220,4 +217,4 @@ Concise. Do not claim tests passed unless worker JSON `evidence` quotes real out
 
 ### Progress
 
-Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels show who is working. Chat is for plan approval, user questions, blocked/needs-decision, and the Final report only.
+Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` lines. Host Task panels show who is working. Chat is for planner Gaps, user questions, blocked/needs-decision, and the Final report only (plan approval is the hook's ask).

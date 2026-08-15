@@ -79,6 +79,20 @@ function migrateRaw(raw) {
   return emptyState()
 }
 
+/**
+ * Plan-gate keys, preserved through every load/save.
+ * The bucket is rebuilt key-by-key on both sides, so anything not listed here
+ * is dropped by the next hook event.
+ */
+function planKeys(bucket) {
+  const out = {}
+  if (bucket?.planApproval === 'pending' || bucket?.planApproval === 'approved') {
+    out.planApproval = bucket.planApproval
+  }
+  if (typeof bucket?.planSummary === 'string') out.planSummary = bucket.planSummary
+  return out
+}
+
 export function loadState() {
   const path = getStatePath()
   try {
@@ -96,6 +110,7 @@ export function loadState() {
           bucket?.blocks && typeof bucket.blocks === 'object'
             ? { ...bucket.blocks }
             : {},
+        ...planKeys(bucket),
       }
     }
     return { sessions }
@@ -118,6 +133,7 @@ export function saveState(state) {
     sessions[sid] = {
       roles: { ...(bucket.roles || {}) },
       blocks: { ...(bucket.blocks || {}) },
+      ...planKeys(bucket),
     }
   }
   const tmp = `${path}.${process.pid}.tmp`
@@ -263,6 +279,56 @@ export function bumpReportBlock(sessionId, agentId) {
     bucket.blocks[agentId] = next
     saveState(state)
     return next
+  })
+}
+
+/** Plan summary lands in a permission dialog — truncate rather than widen. */
+export const PLAN_SUMMARY_MAX = 400
+
+/** Implementers held behind plan approval. Audit-only roles are never gated. */
+export const PLAN_GATE_IMPLEMENTERS = new Set([
+  'frontend',
+  'backend',
+  'tester',
+  'documenter',
+  'devops',
+  'infrastructure',
+])
+
+export function planGateEnabled() {
+  return process.env.AGENT_KIT_PLAN_GATE !== 'off'
+}
+
+/** planner done → the next implementer spawn asks the user to approve the plan. */
+export function setPlanPending(sessionId, summary) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    bucket.planApproval = 'pending'
+    bucket.planSummary = String(summary || '').slice(0, PLAN_SUMMARY_MAX)
+    saveState(state)
+  })
+}
+
+export function readPlanApproval(sessionId) {
+  const bucket = loadState().sessions[sessionId || FALLBACK_SESSION]
+  return {
+    planApproval: bucket?.planApproval,
+    planSummary: bucket?.planSummary || '',
+  }
+}
+
+/**
+ * SubagentStart is the only "yes" signal the adapter gets — the host never
+ * tells the hook how the user answered the ask.
+ */
+export function approvePlan(sessionId) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+    if (bucket?.planApproval !== 'pending') return
+    bucket.planApproval = 'approved'
+    saveState(state)
   })
 }
 

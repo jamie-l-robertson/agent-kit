@@ -6,7 +6,7 @@ Live feedback for multi-host orchestration comes from **named Task/Agent panels*
 
 - Never do implementer/planner work in the manager turn — only spawn specialists (or ask the user).
 - Prefer **fast-path** when eligible (trivial single-owner).
-- Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` progress lines. The Task/Agent UI title is enough while work runs. Save chat for plan approval, needs-decision, blocked, and the Final report.
+- Do **not** emit `[manager] Got it…` / `[manager] Dispatching…` progress lines. The Task/Agent UI title is enough while work runs. Plan approval is the hook's permission ask, not a chat round — save chat for planner Gaps, needs-decision, blocked, and the Final report.
 
 ## Claude Code spawn contract
 
