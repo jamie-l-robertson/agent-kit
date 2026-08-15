@@ -122,7 +122,16 @@ function handleSubagentStop(payload) {
 
   if (result.ok) {
     const tokens = resolveTokenCount(report, payload)
-    appendTaskMemory(report, { sessionId: sessionId || undefined, tokens })
+    // The payload carries no token field, so any number here came from the
+    // worker's transcript unless the worker counted itself — and the
+    // transcript is one turn behind at stop time. Mark it rather than imply
+    // an exact figure.
+    const tokensApprox = tokens != null && resolveTokenCount(report) == null
+    appendTaskMemory(report, {
+      sessionId: sessionId || undefined,
+      tokens,
+      tokensApprox,
+    })
     appendRunEvent({
       event: 'report',
       sessionId: sessionId || null,
@@ -132,6 +141,7 @@ function handleSubagentStop(payload) {
       goal: String(report.goal || ''),
       verificationResult: String(report.verificationResult || 'n/a'),
       tokens,
+      tokensApprox,
       changed: Array.isArray(report.changed) ? report.changed : [],
       validatorOk: true,
       hookEvent: 'SubagentStop',

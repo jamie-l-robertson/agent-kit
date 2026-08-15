@@ -215,7 +215,7 @@ UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/m
 
 ## Communication
 
-Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token counts.
+Concise. Do not claim tests passed unless worker JSON `evidence` quotes real output and `verificationResult` is `pass`. Closing without the **Final report** template (including **Token costs**) is a process fail — ask-question is not a substitute for the close block. Never invent token counts. `~N` from `tasks.md` is hook-measured and one turn low — carry the tilde through to the Final report rather than presenting it as exact.
 
 ### Progress
 

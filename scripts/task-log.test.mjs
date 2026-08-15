@@ -17,6 +17,7 @@ import {
   appendTaskMemory,
   splitTaskEntries,
   TASKS_HEADER,
+  tokensFromTranscript,
 } from '../.claude/hooks/task-log.mjs'
 
 const sampleReport = {
@@ -135,4 +136,71 @@ test('splitTaskEntries round-trips header and ## blocks', () => {
   const { header, entries } = splitTaskEntries(md)
   assert.match(header, /Agent tasks log/)
   assert.equal(entries.length, 2)
+})
+
+/** Shape of a real subagent transcript row (only the fields we read). */
+const turn = (usage) => JSON.stringify({ type: 'assistant', message: { usage } })
+
+test('tokensFromTranscript sums the last assistant turn, matching subagent_tokens', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-tx-'))
+  try {
+    const path = join(dir, 'agent-1.jsonl')
+    writeFileSync(
+      path,
+      [
+        JSON.stringify({ type: 'user' }),
+        // An earlier turn must NOT be added in — the host's figure is the
+        // final state, not a running total.
+        turn({ input_tokens: 2, cache_creation_input_tokens: 23040, cache_read_input_tokens: 24013, output_tokens: 111 }),
+        'not json — skipped',
+        turn({ input_tokens: 2, cache_creation_input_tokens: 2872, cache_read_input_tokens: 47053, output_tokens: 333 }),
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+    assert.equal(tokensFromTranscript(path), 50260)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('tokensFromTranscript never invents a number', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-tx-'))
+  try {
+    const empty = join(dir, 'empty.jsonl')
+    writeFileSync(empty, `${JSON.stringify({ type: 'user' })}\n`, 'utf8')
+    assert.equal(tokensFromTranscript(empty), null, 'no assistant turn')
+    assert.equal(tokensFromTranscript(join(dir, 'missing.jsonl')), null)
+    assert.equal(tokensFromTranscript(''), null)
+    assert.equal(tokensFromTranscript(undefined), null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('resolveTokenCount falls back to the transcript, but the report wins', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-tx-'))
+  try {
+    const path = join(dir, 'agent-1.jsonl')
+    writeFileSync(`${path}`, `${turn({ input_tokens: 1, output_tokens: 9 })}\n`, 'utf8')
+    const payload = { agent_transcript_path: path }
+    assert.equal(resolveTokenCount({}, payload), 10)
+    assert.equal(
+      resolveTokenCount({ usage: { totalTokens: 7 } }, payload),
+      7,
+      'a self-reported count still wins',
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('a transcript-derived count is marked approximate', () => {
+  const approx = formatTaskEntry(sampleReport, { tokens: 4200, tokensApprox: true })
+  assert.match(approx, /\*\*Tokens\*\*: ~4200/)
+  const exact = formatTaskEntry(sampleReport, { tokens: 4200 })
+  assert.match(exact, /\*\*Tokens\*\*: 4200/)
+  assert.doesNotMatch(exact, /~/)
+  const none = formatTaskEntry(sampleReport, { tokens: null, tokensApprox: true })
+  assert.match(none, /\*\*Tokens\*\*: n\/a/, 'no tilde on a missing number')
 })

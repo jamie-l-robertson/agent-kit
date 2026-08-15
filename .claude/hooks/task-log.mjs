@@ -21,6 +21,7 @@ export const TASKS_HEADER = `# Agent tasks log
 
 Append-only. Written by the call-graph gate on valid worker reports (SubagentStop).
 <!-- Skim titles / last session / open needs-decision; paste anchors into briefs — do not paste the whole log. Older entries: .claude/memory/tasks-archive/ -->
+<!-- Tokens: a ~ prefix means the number was measured from the worker's transcript at SubagentStop, one turn before its final message is flushed — real but slightly low. No prefix means the worker reported it. Keep the tilde when quoting. -->
 
 <!-- Entries go below this line -->
 
@@ -40,6 +41,49 @@ export function getTasksArchiveDir(root) {
   }
   const base = root || join(__dirname, '..', 'memory')
   return join(base, 'tasks-archive')
+}
+
+/** Context + output on one assistant turn — what the host counts. */
+const USAGE_KEYS = [
+  'input_tokens',
+  'cache_creation_input_tokens',
+  'cache_read_input_tokens',
+  'output_tokens',
+]
+
+/**
+ * Total tokens for a finished subagent, read from its own transcript
+ * (`agent_transcript_path` on the SubagentStop payload — the payload itself
+ * carries no token field).
+ *
+ * Claude Code's `subagent_tokens` is the **last** assistant turn's context +
+ * output, not a sum across turns. Verified byte-exact against three live
+ * dispatches (49660 / 50260 / 50261).
+ *
+ * ponytail: reads the whole transcript; it runs once per worker completion,
+ * not per tool call. Stream it if long implementer runs ever make this hurt.
+ * @param {string | null | undefined} path
+ * @returns {number | null} null whenever a real number is not available
+ */
+export function tokensFromTranscript(path) {
+  if (!path) return null
+  try {
+    let last = null
+    for (const line of readFileSync(path, 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const usage = JSON.parse(line)?.message?.usage
+        if (usage && typeof usage === 'object') last = usage
+      } catch {
+        // Partial or non-JSON line — transcripts are appended live.
+      }
+    }
+    if (!last) return null
+    const total = USAGE_KEYS.reduce((sum, k) => sum + (Number(last[k]) || 0), 0)
+    return total > 0 ? total : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -78,12 +122,12 @@ export function resolveTokenCount(report, payload = {}) {
       if (Number.isFinite(n) && n >= 0) return n
     }
   }
-  return null
+  return tokensFromTranscript(p.agent_transcript_path)
 }
 
 /**
  * @param {Record<string, unknown>} report
- * @param {{ sessionId?: string, tokens?: number | null, now?: Date }} [opts]
+ * @param {{ sessionId?: string, tokens?: number | null, tokensApprox?: boolean, now?: Date }} [opts]
  */
 export function formatTaskEntry(report, opts = {}) {
   const now = opts.now || new Date()
@@ -99,7 +143,10 @@ export function formatTaskEntry(report, opts = {}) {
     changed.length === 0 ? 'none' : changed.map(String).join(', ')
   const tokens =
     opts.tokens === undefined ? resolveTokenCount(report) : opts.tokens
-  const tokensLine = tokens == null ? 'n/a' : String(tokens)
+  // `~` = measured from the transcript at SubagentStop, which is one turn
+  // behind: the worker's final turn is not flushed yet. Real, slightly low.
+  const tokensLine =
+    tokens == null ? 'n/a' : `${opts.tokensApprox ? '~' : ''}${tokens}`
   const session = opts.sessionId || 'n/a'
   const lines = [
     `## ${ts} — ${agent}: ${shortGoal}`,
@@ -171,7 +218,7 @@ export function archiveOverflow(livePath, overflowEntries, now = new Date()) {
  * Append one task entry; peel oldest into monthly archive when over cap.
  * Best-effort: never throws.
  * @param {Record<string, unknown>} report
- * @param {{ sessionId?: string, tokens?: number | null, root?: string, cap?: number, now?: Date }} [opts]
+ * @param {{ sessionId?: string, tokens?: number | null, tokensApprox?: boolean, root?: string, cap?: number, now?: Date }} [opts]
  */
 export function appendTaskMemory(report, opts = {}) {
   try {
@@ -185,6 +232,7 @@ export function appendTaskMemory(report, opts = {}) {
     const entry = formatTaskEntry(report, {
       sessionId: opts.sessionId,
       tokens,
+      tokensApprox: opts.tokensApprox,
       now: opts.now,
     })
     const existing = readFileSync(path, 'utf8')
