@@ -3,3 +3,6 @@
 .claude/memory/runs/
 .tmp-*install*/
 .tmp-skills-inv-*/
+
+# Local, per-machine settings (plugin toggles etc) — never ship with the kit
+.claude/settings.local.json
