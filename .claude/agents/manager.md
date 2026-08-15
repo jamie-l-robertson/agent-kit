@@ -133,7 +133,7 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
    - **Gaps for manager** from planner (ask user, or confirm accept-as-assumption)
    - For UI plans: short **Design** line (exists / source / request-aligned|delta|unknown / understanding OK|unclear|mismatch)
    - Assumptions / open risks that need a decision
-   Nothing to raise → dispatch and let the ask do the gating. Full Worker briefs stay internal unless the user asks. The hook is a strong nudge, not enforcement (`AGENT_KIT_PLAN_GATE=off`, bypass permission modes) — it does not license dispatching a plan you know the user has not seen.
+   Nothing to raise → dispatch and let the ask do the gating. **Spawning two implementers in one message raises two asks** — every `PreToolUse` runs before any `SubagentStart` clears the flag, so the hook cannot know the first was already approved. Dispatch the first implementer alone if one ask is what you want; parallel dispatch is still correct when the paths do not overlap, the user just approves twice. Full Worker briefs stay internal unless the user asks. The hook is a strong nudge, not enforcement (`AGENT_KIT_PLAN_GATE=off`, bypass permission modes) — it does not license dispatching a plan you know the user has not seen.
 7. **Apply tweaks** then **Dispatch** implementers — call `Task` (no `[manager] Dispatching…` chatter). **brief-hygiene** (canonical template). Always `Mode` + `Human approve` + `Model` in the brief.
    - Success implies tests/lint/codegen → name **verify-evidence** and a `Verify with` command in the brief.
    - Frontend paths expected in `changed` → name **browser-test** in the brief. Do not accept a UI claim nobody looked at.

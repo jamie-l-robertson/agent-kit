@@ -198,33 +198,20 @@ test('invalid stdin denies rather than crashing', () => {
   assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
 })
 
-test('SubagentStart names the specialist for the user', () => {
+test('SubagentStart emits no chatter — the pulse channel is invisible', () => {
   withStateDir((dir) => {
-    const out = runAdapter(
-      {
-        hook_event_name: 'SubagentStart',
-        session_id: 's1',
-        agent_id: 'fe-1',
-        agent_type: 'frontend',
-      },
-      dir,
-    )
-    assert.match(out.systemMessage, /frontend/)
-  })
-})
-
-test('SubagentStart stays quiet for non-kit agents', () => {
-  withStateDir((dir) => {
-    const out = runAdapter(
-      {
-        hook_event_name: 'SubagentStart',
-        session_id: 's1',
-        agent_id: 'ex-1',
-        agent_type: 'Explore',
-      },
-      dir,
-    )
-    assert.deepEqual(out, {}, 'no chatter for built-in agents')
+    for (const agent_type of ['frontend', 'Explore']) {
+      const out = runAdapter(
+        {
+          hook_event_name: 'SubagentStart',
+          session_id: 's1',
+          agent_id: 'a-1',
+          agent_type,
+        },
+        dir,
+      )
+      assert.deepEqual(out, {}, `no systemMessage for ${agent_type}`)
+    }
   })
 })
 

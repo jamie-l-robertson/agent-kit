@@ -219,18 +219,13 @@ try {
     process.exit(0)
   }
 
-  // Name the specialist the moment it starts, so "dispatched" is never anonymous
-  // even when the spawn title is vague.
-  if (event === 'SubagentStart') {
+  // No SubagentStart pulse: `systemMessage` did not render in the parent UI
+  // when spiked (2026-08-15), and the Task panel title already names the
+  // specialist. Do not re-add without checking it is visible.
+  if (event === 'SubagentStart' && PLAN_GATE_IMPLEMENTERS.has(normalized.target)) {
     // The host never reports how the user answered the ask — the implementer
     // actually starting is the only "approved" signal available.
-    if (PLAN_GATE_IMPLEMENTERS.has(normalized.target)) {
-      planGateSafe(() => approvePlan(normalized.sessionId))
-    }
-    if (PROJECT_AGENTS.has(normalized.target)) {
-      write({ systemMessage: `▶ ${normalized.target} started` })
-      process.exit(0)
-    }
+    planGateSafe(() => approvePlan(normalized.sessionId))
   }
 
   if (stopAdvisory) {
