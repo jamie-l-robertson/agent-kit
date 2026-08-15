@@ -25,7 +25,7 @@ Quick reference for subagents. Prefer this over rediscovering the stack each run
 - **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
 - **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
 - **Rules**: always-on under `.claude/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
-- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `browser-test`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — `grill-with-docs`, `simplify`, `to-issues`. Inventory: `.claude/memory/skills-inventory.md`.
+- **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `browser-test`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `setup`, `sync-project-skills`, `verify-evidence`; project — `bro`, `grill-with-docs`, `simplify`, `to-issues`. Inventory: `.claude/memory/skills-inventory.md`.
 
 ### Resolving Design system / standards refs
 
