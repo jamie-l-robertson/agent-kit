@@ -14,6 +14,7 @@ import {
   mergeClaudeSettings,
   CLAUDE_GATE,
   KIT_AGENT_MATCHER,
+  PRETOOL_MATCHER,
 } from './merge-host-config.mjs'
 import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
@@ -31,7 +32,7 @@ test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () =
         hooks: {
           PreToolUse: [
             {
-              matcher: 'Agent|Task',
+              matcher: PRETOOL_MATCHER,
               hooks: [
                 { type: 'command', command: 'node foreign-audit.mjs' },
               ],
@@ -50,7 +51,7 @@ test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () =
     const doc = JSON.parse(
       readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
     )
-    const pre = doc.hooks.PreToolUse.find((e) => e.matcher === 'Agent|Task')
+    const pre = doc.hooks.PreToolUse.find((e) => e.matcher === PRETOOL_MATCHER)
     assert.ok(pre)
     const cmds = pre.hooks.map((h) => h.command)
     assert.ok(cmds.includes('node foreign-audit.mjs'))
@@ -82,7 +83,7 @@ test('mergeClaudeSettings upgrades a legacy gate command in place', () => {
           ],
           PreToolUse: [
             {
-              matcher: 'Agent|Task',
+              matcher: PRETOOL_MATCHER,
               hooks: [
                 { type: 'command', command: legacy },
                 { type: 'command', command: 'node foreign-audit.mjs' },

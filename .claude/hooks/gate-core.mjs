@@ -332,6 +332,27 @@ export function approvePlan(sessionId) {
   })
 }
 
+/**
+ * Access integrity: issue trackers and standards URLs are MCP-only. These are
+ * the high-confidence DIY bypasses — not a blanket ban on `gh` or `curl`.
+ * `gh pr` / `gh run` / localhost fetches stay allowed.
+ */
+const GH_TRACKER = /(?<![\w-])gh\s+(issue|api)\b/i
+const FETCHER = /(?<![\w-])(curl|wget|http|xh)\b/i
+const TRACKER_HOST =
+  /(api\.github\.com|[a-z0-9-]+\.atlassian\.net|api\.linear\.app|api\.notion\.com)/i
+
+/** @returns {string} what matched, or '' when the command is fine */
+export function detectTrackerBypass(command) {
+  const cmd = String(command || '')
+  if (GH_TRACKER.test(cmd)) return `\`gh ${cmd.match(GH_TRACKER)[1]}\``
+  const fetcher = cmd.match(FETCHER)
+  if (fetcher && TRACKER_HOST.test(cmd)) {
+    return `\`${fetcher[1]}\` to ${cmd.match(TRACKER_HOST)[1]}`
+  }
+  return ''
+}
+
 export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {
   if (!id || !role) return
   const bucket = ensureSession(state, sessionId)

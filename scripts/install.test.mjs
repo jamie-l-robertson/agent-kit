@@ -15,6 +15,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { installFrom } from './install.mjs'
+import { PRETOOL_MATCHER } from './merge-host-config.mjs'
 
 const kitRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -112,7 +113,7 @@ test('install merges Claude settings and preserves foreign github workflow', () 
       'foreign claude PreToolUse preserved',
     )
     assert.ok(
-      settings.hooks.PreToolUse.some((e) => e.matcher === 'Agent|Task'),
+      settings.hooks.PreToolUse.some((e) => e.matcher === PRETOOL_MATCHER),
       'kit claude gate merged',
     )
 
@@ -216,7 +217,7 @@ test('install Claude merge keeps sibling hooks and adds SessionStart', () => {
         hooks: {
           PreToolUse: [
             {
-              matcher: 'Agent|Task',
+              matcher: PRETOOL_MATCHER,
               hooks: [{ type: 'command', command: 'node sibling.mjs' }],
             },
           ],
@@ -228,7 +229,7 @@ test('install Claude merge keeps sibling hooks and adds SessionStart', () => {
     const settings = JSON.parse(
       readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
     )
-    const pre = settings.hooks.PreToolUse.find((e) => e.matcher === 'Agent|Task')
+    const pre = settings.hooks.PreToolUse.find((e) => e.matcher === PRETOOL_MATCHER)
     const cmds = (pre?.hooks || []).map((h) => h.command)
     assert.ok(cmds.includes('node sibling.mjs'))
     assert.ok(cmds.some((c) => String(c).includes('claude.mjs')))

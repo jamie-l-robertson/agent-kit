@@ -32,6 +32,7 @@ import {
   approvePlan,
   planGateEnabled,
   PLAN_SUMMARY_MAX,
+  detectTrackerBypass,
 } from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -953,4 +954,33 @@ test('planGateEnabled honors AGENT_KIT_PLAN_GATE=off', () => {
   process.env.AGENT_KIT_PLAN_GATE = 'off'
   assert.equal(planGateEnabled(), false)
   delete process.env.AGENT_KIT_PLAN_GATE
+})
+
+// --- access integrity (Phase 2) ---
+
+test('detectTrackerBypass catches gh issue/api and tracker fetches', () => {
+  for (const cmd of [
+    'gh issue view 42',
+    'gh api repos/o/r/issues/1',
+    'cd /tmp && gh   issue list',
+    'curl -s https://api.github.com/repos/o/r/issues/1',
+    'wget https://acme.atlassian.net/rest/api/3/issue/ABC-1',
+    'curl https://api.linear.app/graphql -d @q.json',
+    'curl -H auth https://api.notion.com/v1/pages/x',
+  ]) {
+    assert.ok(detectTrackerBypass(cmd), `should flag: ${cmd}`)
+  }
+})
+
+test('detectTrackerBypass leaves ordinary commands alone', () => {
+  for (const cmd of [
+    'gh pr create --fill',
+    'gh run watch',
+    'npm test',
+    'curl -s http://localhost:3000/api/health',
+    'git log --oneline -5',
+    'echo api.github.com',
+  ]) {
+    assert.equal(detectTrackerBypass(cmd), '', `should allow: ${cmd}`)
+  }
 })

@@ -23,6 +23,7 @@ import {
   setPlanPending,
   readPlanApproval,
   approvePlan,
+  detectTrackerBypass,
 } from '../gate-core.mjs'
 import { appendTaskMemory, resolveTokenCount } from '../task-log.mjs'
 import {
@@ -89,13 +90,26 @@ const REPORT_HINT =
   'End your final message with a fenced JSON worker-report matching .claude/schemas/worker-report.schema.json (see .claude/protocols/worker-report.md).'
 
 /**
+ * A schema-valid report can still admit a DIY bypass in prose. Advisory only —
+ * judging whether a quote is a real fallback is the manager's call, not a regex's.
+ */
+function bypassAdvisory(report) {
+  const prose = [report.mcpUsed, report.evidence, report.notes, report.findings]
+    .filter((v) => typeof v === 'string')
+    .join('\n')
+  const matched = detectTrackerBypass(prose)
+  if (!matched) return ''
+  return `This report quotes ${matched} — trackers and standards URLs are MCP-only. Manager: bounce for an honest \`mcpUsed\`, or accept \`blocked\` naming the missing server.`
+}
+
+/**
  * Validate a kit worker's final message. Blocks until the fence is valid,
  * then goes advisory so a bad worker cannot burn the session.
- * @returns {boolean} true when handled (output written)
+ * @returns {{ handled: boolean, advisory: string }} handled = output written
  */
 function handleSubagentStop(payload) {
   const agentType = String(payload.agent_type || '')
-  if (!PROJECT_AGENTS.has(agentType)) return false
+  if (!PROJECT_AGENTS.has(agentType)) return { handled: false, advisory: '' }
 
   const sessionId = String(payload.session_id || '')
   const agentId = String(payload.agent_id || '')
@@ -125,7 +139,7 @@ function handleSubagentStop(payload) {
     if (agentType === 'planner' && String(report.status) === 'done') {
       planGateSafe(() => setPlanPending(sessionId, planSummaryOf(report)))
     }
-    return false
+    return { handled: false, advisory: bypassAdvisory(report) }
   }
 
   const blocks = bumpReportBlock(sessionId, agentId)
@@ -147,11 +161,11 @@ function handleSubagentStop(payload) {
         additionalContext: `${detail}\n\n(Report gate gave up after ${MAX_REPORT_BLOCKS} retries — manager must bounce this report.)`,
       },
     })
-    return true
+    return { handled: true, advisory: '' }
   }
 
   write({ decision: 'block', reason: detail })
-  return true
+  return { handled: true, advisory: '' }
 }
 
 const raw = await readStdin()
@@ -167,8 +181,29 @@ try {
   const normalized = normalizeClaudePayload(payload)
   const event = normalized.event
 
-  if (event === 'SubagentStop' && handleSubagentStop(payload)) {
+  let stopAdvisory = ''
+  if (event === 'SubagentStop') {
+    const report = handleSubagentStop(payload)
     // Blocked or advisory — leave the role mapping in place for the retry.
+    if (report.handled) process.exit(0)
+    stopAdvisory = report.advisory
+  }
+
+  // Non-spawn PreToolUse: access integrity only. Answered without touching
+  // state — this fires on every Bash call a kit agent makes.
+  if (event === 'PreToolUse' && normalized.skipGate) {
+    const matched =
+      PROJECT_AGENTS.has(normalized.callerAgentType) &&
+      /^Bash$/i.test(normalized.toolName)
+        ? detectTrackerBypass(payload.tool_input?.command)
+        : ''
+    if (matched) {
+      denyPreToolUse(
+        `Blocked: ${matched} is a DIY bypass. Issue trackers and standards URLs are MCP-only (see .claude/protocols/ref-resolution.md). Use the tracker's MCP; if it is missing or unauthed, return status: blocked naming the server.`,
+      )
+    } else {
+      noop()
+    }
     process.exit(0)
   }
 
@@ -196,6 +231,16 @@ try {
       write({ systemMessage: `▶ ${normalized.target} started` })
       process.exit(0)
     }
+  }
+
+  if (stopAdvisory) {
+    write({
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStop',
+        additionalContext: stopAdvisory,
+      },
+    })
+    process.exit(0)
   }
 
   // SubagentStop / SessionStart / SessionEnd — record/clear only

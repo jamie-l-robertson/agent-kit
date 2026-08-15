@@ -4,3 +4,4 @@
 - **Never assume `implement`**: If Mode is omitted, assume the safest read-only Mode for your role (`audit-only` unless a Role exception says otherwise). Documenter must not assume `document` without an explicit brief Mode.
 - **Evidence**: Never claim green without quoted command output in JSON `evidence` when Success required verification; set `verificationResult` accordingly (see verify-evidence).
 - **MCP**: Prefer brief `MCP prewarmed`. List meaningful calls under `mcpUsed`. Never curl / `gh` / raw REST / WebFetch / browser for URL standards or issues.
+- **No DIY bypass**: When an MCP or a named CLI is missing, unauthed, or awkward, return `blocked` naming the server or command. Do **not** write a one-off script, `fetch` helper, or alternate CLI to reach the same system — "just this once" is still a bypass. `gh issue` / `gh api` and direct fetches to tracker hosts are denied by the Claude hook; the deny is narrow, so treat the rule as wider than the pattern.

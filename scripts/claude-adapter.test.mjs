@@ -336,3 +336,58 @@ test('plan gate never turns a nest deny into an ask', () => {
     assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
   })
 })
+
+// --- access integrity (Phase 2) ---
+
+const bashCall = (command, agent_type = 'planner') => ({
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  session_id: 's1',
+  agent_id: 'pl-1',
+  agent_type,
+  tool_input: { command },
+})
+
+test('kit agent shelling out to a tracker is denied, with routing', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(bashCall('gh issue view 42'), dir)
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+    const reason = out.hookSpecificOutput.permissionDecisionReason
+    assert.match(reason, /gh issue/)
+    assert.match(reason, /MCP/)
+    assert.match(reason, /blocked/, 'must name the way out')
+  })
+})
+
+test('tracker deny leaves ordinary commands and non-kit callers alone', () => {
+  withStateDir((dir) => {
+    assert.deepEqual(runAdapter(bashCall('npm test'), dir), {})
+    assert.deepEqual(runAdapter(bashCall('gh pr create --fill'), dir), {})
+    assert.deepEqual(
+      runAdapter(bashCall('gh issue view 42', ''), dir),
+      {},
+      'the main agent is not a kit worker',
+    )
+  })
+})
+
+test('a report quoting a forbidden fallback goes advisory, not block', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'pl-1',
+        agent_type: 'planner',
+        last_assistant_message: fence({
+          ...plannerReport,
+          mcpUsed: 'none — fell back to `gh issue view 42`',
+        }),
+      },
+      dir,
+    )
+    assert.equal(out.decision, undefined, 'valid schema must not be blocked')
+    assert.match(out.hookSpecificOutput.additionalContext, /gh issue/)
+    assert.match(out.hookSpecificOutput.additionalContext, /bounce/i)
+  })
+})

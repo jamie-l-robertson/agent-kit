@@ -29,6 +29,9 @@ export const KIT_PERMISSIONS = [
   'Bash(node scripts/sync-project-skills.mjs:*)',
 ]
 
+/** Agent|Task = call-graph gate; Bash = tracker-bypass deny (access integrity). */
+export const PRETOOL_MATCHER = 'Agent|Task|Bash'
+
 /** Secrets stay out of agent context — names and refs only. */
 export const KIT_DENY = ['Read(./.env)', 'Read(./.env.*)']
 
@@ -86,7 +89,7 @@ export function mergeClaudeSettings(root, { failOnInvalidJson = true } = {}) {
   }
 
   hooks.SessionStart = mergeByCommand(hooks.SessionStart, null, CLAUDE_GATE)
-  hooks.PreToolUse = mergeByCommand(hooks.PreToolUse, 'Agent|Task', CLAUDE_GATE)
+  hooks.PreToolUse = mergeByCommand(hooks.PreToolUse, PRETOOL_MATCHER, CLAUDE_GATE)
   hooks.SubagentStart = mergeByCommand(hooks.SubagentStart, null, CLAUDE_GATE)
   hooks.SubagentStop = mergeByCommand(
     hooks.SubagentStop,
