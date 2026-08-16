@@ -6,7 +6,7 @@
  *   node scripts/sync-tool-adapters.mjs          # merge settings + refresh CLAUDE.md
  *   node scripts/sync-tool-adapters.mjs --check  # roster / settings / marker checks
  *
- * Protocol helpers (`composeBody`, etc.) remain for docs/tests; agents are already expanded.
+ * Agents ship pre-expanded; `--check` recomposes the protocol blocks and fails on drift.
  */
 
 import {
@@ -201,6 +201,99 @@ function expandIncludes(text, stack = new Set()) {
   )
 }
 
+/** Composite protocols an agent's expanded body can legitimately come from. */
+const PROTOCOL_VARIANTS = ['implement', 'readonly', 'document']
+
+/**
+ * Split a markdown body into `## `-delimited blocks (heading → block text).
+ * Content before the first `## ` is ignored — that is agent-specific preamble.
+ */
+export function protocolBlocks(text) {
+  /** @type {Map<string, string>} */
+  const out = new Map()
+  let heading = null
+  let buf = []
+  for (const line of text.split('\n')) {
+    if (line.startsWith('## ')) {
+      if (heading !== null) out.set(heading, buf.join('\n').trimEnd())
+      heading = line.slice(3).trim()
+      buf = [line]
+    } else if (heading !== null) {
+      buf.push(line)
+    }
+  }
+  if (heading !== null) out.set(heading, buf.join('\n').trimEnd())
+  return out
+}
+
+/**
+ * Expected protocol blocks: heading → set of acceptable texts (one per variant),
+ * plus each variant's full heading list for completeness checks.
+ */
+export function expectedProtocolBlocks() {
+  /** @type {Map<string, Set<string>>} */
+  const blocks = new Map()
+  const variantHeadings = []
+  for (const v of PROTOCOL_VARIANTS) {
+    const b = protocolBlocks(loadProtocol(v, new Set()))
+    variantHeadings.push([...b.keys()])
+    for (const [heading, text] of b) {
+      if (!blocks.has(heading)) blocks.set(heading, new Set())
+      blocks.get(heading).add(text)
+    }
+  }
+  return { blocks, variantHeadings }
+}
+
+/** Lines in `want` that `got` does not contain (ignoring blank lines). */
+function missingLines(want, got) {
+  const have = new Set(got.split('\n').map((l) => l.trim()))
+  return want
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !have.has(l))
+}
+
+/**
+ * Drift between an agent's pre-expanded protocol blocks and `.claude/protocols/`.
+ * @param {string} file agent filename, for messages
+ * @param {string} raw agent file contents
+ * @param {ReturnType<typeof expectedProtocolBlocks>} expected
+ */
+export function protocolDrift(file, raw, expected) {
+  const mismatches = []
+  const { body } = parseFrontmatter(raw)
+  const blocks = protocolBlocks(body)
+
+  for (const [heading, text] of blocks) {
+    const accepted = expected.blocks.get(heading)
+    // Prefix, not equality: agents may append their own `###` sub-sections
+    // after a protocol block, but must not alter or drop the protocol text.
+    if (!accepted || [...accepted].some((want) => text.startsWith(want))) continue
+    // Report against the closest variant (fewest missing lines).
+    const missing = [...accepted]
+      .map((want) => missingLines(want, text))
+      .sort((a, b) => a.length - b.length)[0]
+    const detail = missing.length
+      ? missing.map((l) => `\n      missing: ${l}`).join('')
+      : '\n      (wording differs — re-copy the protocol block)'
+    mismatches.push(
+      `.claude/agents/${file} "## ${heading}" is stale vs .claude/protocols/${detail}`,
+    )
+  }
+
+  if (
+    blocks.has('Shared worker protocol') &&
+    !expected.variantHeadings.some((hs) => hs.every((h) => blocks.has(h)))
+  ) {
+    mismatches.push(
+      `.claude/agents/${file} is missing whole protocol sections (has: ${[...blocks.keys()].join(', ')})`,
+    )
+  }
+
+  return mismatches
+}
+
 export function composedAgentSource(raw) {
   const { body, rawFm } = parseFrontmatter(raw)
   const composed = composeBody(body)
@@ -313,9 +406,12 @@ function checkDrift() {
     mismatches.push(err instanceof Error ? err.message : String(err))
   }
 
+  const expectedBlocks = expectedProtocolBlocks()
+
   for (const file of listAgentFiles()) {
     const path = join(AGENTS_DIR, file)
     const raw = read(path)
+    mismatches.push(...protocolDrift(file, raw, expectedBlocks))
     if (MARKER_RE.test(raw)) {
       mismatches.push(
         `.claude/agents/${file} still has protocol/include markers — expand before commit`,
