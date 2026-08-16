@@ -151,6 +151,7 @@ Also verify/report:
 2. Worker names in `.claude/hooks/gate-core.mjs` (`WORKERS`) match `.claude/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
 3. If you edited `.claude/` (agents/skills/hooks/rules), run `node scripts/sync-tool-adapters.mjs --check` / `node scripts/sync-project-skills.mjs` before commit, then **commit** `.claude/`.
 4. Remind: Context7 / other **Required MCP** must be installable for prewarm.
+5. Point the user at `.claude/protocols/context-practices.md` — `/clear` between unrelated tasks, `/compact focus on …` mid-task, `/context` to diagnose. Do **not** bake compaction settings into the project; they are the user's call.
 
 ## Done criteria
 

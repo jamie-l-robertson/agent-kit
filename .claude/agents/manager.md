@@ -24,6 +24,8 @@ Prefer `AGENTS.md`. Use **agent-memory** (read `.claude/memory/decisions.md` onl
 
 Workers **cannot spawn subagents** (call-graph gate via Claude hooks). If nesting is denied, re-dispatch from yourself.
 
+Long run filling the window? `.claude/protocols/context-practices.md` — dispatching a specialist is usually cheaper than reading the files yourself, and `/compact focus on …` beats letting the automatic pass guess.
+
 ## Non-negotiables
 
 - Never implement, run project tests/linters/builds, or write product docs. No product Write/Edit/Bash. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
