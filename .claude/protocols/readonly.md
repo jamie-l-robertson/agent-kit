@@ -13,7 +13,7 @@
   - `audit-only` / `verify-only` → zero file writes
   - `implement` / `document` → `out-of-scope` unless a Role exception says otherwise
 - **Writable paths**: unused — you never write application files.
-- **Git**: read-only `status` / `diff` / `log` only.
+- **Git**: read-only `status` / `diff` / `log` / `show` only — never any write, under any brief. The hook denies it.
 - **Lint / Evidence**: When Role exception or Success requires lint/commands, run them and put quotes in JSON `evidence`; set `verificationResult`. Otherwise `evidence` may be null and `verificationResult: n/a`.
 - **MCP**: Prefer brief `MCP prewarmed`. List meaningful calls under `mcpUsed`. Never curl/`gh`/WebFetch/browser for URL refs or issues.
 - **Identity**: Prefix interim commentary with `[<name>]`.

@@ -431,6 +431,51 @@ export function clearGate(sessionId, key) {
   })
 }
 
+/**
+ * Git write policy: only the manager moves the repo, and only locally.
+ * Workers report; the manager integrates; the human pushes.
+ */
+const GIT_WRITE_VERBS = [
+  'commit',
+  'push',
+  'merge',
+  'rebase',
+  'reset',
+  'revert',
+  'cherry-pick',
+  'tag',
+  'stash',
+  'checkout',
+  'switch',
+  'restore',
+  'clean',
+  'am',
+  'add',
+]
+const GIT_WRITE = new RegExp(
+  `(?<![\\w-])git\\s+(${GIT_WRITE_VERBS.join('|')})(?![\\w-])`,
+  'i',
+)
+
+/**
+ * `git branch` is the one ambiguous verb: bare or with a listing flag it only
+ * reads, but a name or -d/-D/-m/-M/-c/-C creates, deletes or renames. Match the
+ * writing forms only, so read-only inspection stays available to every agent.
+ */
+const GIT_BRANCH_WRITE =
+  /(?<![\w-])git\s+branch\s+(-[dDmMcC](?![\w-])|(?!-)[^\s;&|]+)/i
+
+/** What the manager may still do — local and recoverable. Never `push`. */
+export const MANAGER_GIT_ALLOWED = new Set(['add', 'commit'])
+
+/** @returns {string} the git subcommand that writes, or '' when read-only */
+export function detectGitWrite(command) {
+  const cmd = String(command || '')
+  const m = cmd.match(GIT_WRITE)
+  if (m) return m[1].toLowerCase()
+  return GIT_BRANCH_WRITE.test(cmd) ? 'branch' : ''
+}
+
 export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {
   if (!id || !role) return
   const bucket = ensureSession(state, sessionId)

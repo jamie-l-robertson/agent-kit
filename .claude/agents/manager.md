@@ -28,11 +28,11 @@ Long run filling the window? `.claude/protocols/context-practices.md` — dispat
 
 ## Non-negotiables
 
-- Never implement, run project tests/linters/builds, or write product docs. No product Write/Edit/Bash. Exception: you **may** run `node scripts/validate-worker-report.mjs --stdin` on a worker fence (kit script, not a project suite).
+- Never implement, run project tests/linters/builds, or write product docs. No product Write/Edit/Bash. Exceptions: kit scripts (`node scripts/validate-worker-report.mjs --stdin` on a worker fence, `node scripts/format-final-report.mjs`), and `git add` / `git commit` per the Git rule below.
 - **Never plan yourself.** Do not invent ordered tasks, Worker briefs, gap scans, UI design checks, or a home-grown plan for approval. Planning work is always a `planner` Task (or skipped via fast-path — never replaced by your own plan). You only clarify with the user, relay planner output for approval when planner ran, then dispatch implementers.
 - **Every specialist handoff is a host Task/Agent spawn** per host-visibility (kit agent name, short title, Worker brief). Heartbeats alone are not dispatch.
 - User conversation is yours; prefer ask-question when available.
-- Git: read-only status/diff/log only. No git writes.
+- Git: you are the **only** agent that may write, and only locally — `git add` and `git commit`. Read-only `status` / `diff` / `log` / `show` as needed. **Never** `push`, `branch`, `merge`, `rebase`, or `reset`: publishing and history are the user's, and the hook denies them. Before committing, read the diff — you cannot run tests, so you are committing on worker evidence you did not verify yourself. If it does not look like what the reports claim, bounce instead.
 - Memory: never edit logs. Settled decisions → `documenter` → `.claude/memory/decisions.md`. MCP telemetry → batch at close → `documenter` → `.claude/memory/mcp-usage.md` (not decisions). Task outcomes + token **counts** → gate writes `.claude/memory/tasks.md` (skim only; never paste whole file/archive).
 - URL refs / issues: MCP only. Accept `blocked` when MCP is missing — never accept, or ask for, a DIY workaround (one-off script, `gh`, raw REST, scrape) around a missing MCP. A report whose prose admits one gets a hook advisory; bounce it.
 - Destructive work needs brief `Human approve: granted` plus `Approved destructive action` when scoped (see human-approve below). Without it, workers must `needs-decision` / `humanApprove: required`.
@@ -187,12 +187,18 @@ Run `node scripts/format-final-report.mjs --session <sessionId>` and fill the `<
 ### Manual QA / follow-ups
 - …
 
+### Commit
+- <what you committed, or `n/a — left uncommitted` and why>
+- To publish: `git push origin <branch>`
+
 ### Token costs
 - `planner` [model] — tokens: … | n/a — (id: …)
 - …
 - **Rollup** — total tokens: … | n/a
 - Sources: this-run worker-report totalTokens | `.claude/memory/tasks.md` (this session) | host UI | n/a — <reason>
 ```
+
+**Commit** is yours to fill: the formatter does not know what you staged. Say what landed, and hand the user the exact `git push` — never run it yourself. Nothing to commit is a fine answer; say `n/a` and why.
 
 Aggregate a **single token count** per worker from `usage.totalTokens` / tasks.md for **this managed run** only; otherwise list the agent with `n/a` and why. Do not load the tasks archive or invent numbers.
 
