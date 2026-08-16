@@ -91,7 +91,8 @@ Audit-only example:
   "recommendNext": "none",
   "humanApprove": "n/a",
   "verificationResult": "n/a",
-  "findings": "none"
+  "findings": "",
+  "findingsSeverity": "none"
 }
 ```
 
@@ -127,7 +128,10 @@ Rules:
 - `researcher` on `done` ⇒ non-empty `sources` (each `{ title, url|ref, accessed? }`); nothing citable → `blocked`
 - `mode: verify-only` ⇒ `changed: []` (no file writes; do not list product paths)
 - `mode: document` ⇒ `changed` paths only under docs/memory/stack cards (`docs/`, `.claude/memory/`, `.claude/**/*.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`)
-- Audit findings agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` ⇒ non-empty `findings` (use `"none"` if clean)
+- Audit findings agents (`reviewer`, `security`, `risk`) on `done` + `audit-only` ⇒ **`findingsSeverity`** is required: `none` | `warning` | `critical`
+  - `critical` — a real defect, security hole, or compliance breach that must be fixed before close. This is a **typed trigger**: it opens a fix-loop and gates the managed close. Do not use it for nits or preferences
+  - `warning` — worth fixing, does not block; `none` — nothing found
+  - `warning`/`critical` ⇒ non-empty `findings`; `none` ⇒ leave `findings` empty. Writing "Critical" in the prose does nothing — only the typed field is read
 - Planner on `done` ⇒ put Worker briefs in **prose above the fence**, `notes` = short index only
 - `out-of-scope` ⇒ `recommendNext` non-empty and not `"none"`
 - `needs-decision` ⇒ non-empty `needs`
@@ -150,7 +154,9 @@ Disambiguation: secrets **literal in app code** → `security`; pipeline secret 
 1. Require a **named scope**. Whole-app “make it secure” without scope → `needs-decision`.
 2. Resolve **Security standards** and Backend/API standards when refs are set and relevant.
 3. Audit only. Prefer **verify-evidence** (`.claude/skills/verify-evidence/SKILL.md`) when commands support the claim.
-4. Return worker-report JSON with non-empty `findings` on `done` (severity + location + why + suggested owner for fix when applicable).
+4. Return worker-report JSON with non-empty `findings` on `done` (severity + location + why + suggested owner for fix when applicable), **and set `findingsSeverity`** to the highest severity found: `critical` | `warning` | `none`.
+   - `critical` is a typed trigger — it opens a fix-loop and gates the managed close, so the manager must route a fix and re-run you before finishing. Spend it on a real security breach, not a hardening preference.
+   - `none` means nothing found; leave `findings` empty. Prose severity is not read.
 
 ## Constraints
 

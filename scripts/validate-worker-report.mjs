@@ -24,6 +24,7 @@ const MODE = new Set(['audit-only', 'implement', 'verify-only', 'document'])
 const HUMAN = new Set(['required', 'granted', 'n/a'])
 const VERIFY = new Set(['pass', 'fail', 'n/a'])
 const AUDIT_FINDINGS_AGENTS = new Set(['reviewer', 'security', 'risk'])
+const SEVERITY = new Set(['none', 'warning', 'critical'])
 /** Agents that must report audit-only + empty changed on done */
 const READONLY_DONE_AGENTS = new Set([
   'security',
@@ -154,13 +155,37 @@ export function validateWorkerReport(report) {
     }
   }
 
+  if (report.findingsSeverity != null && !SEVERITY.has(report.findingsSeverity)) {
+    errors.push(
+      `invalid findingsSeverity: ${report.findingsSeverity} (use ${[...SEVERITY].join(' | ')})`,
+    )
+  }
+
+  // Typed severity, not prose. The fix-loop gate keys off this field, and
+  // grepping "Critical" out of free text is exactly the semantic guessing the
+  // kit keeps advisory everywhere else.
   if (
     report.status === 'done' &&
     report.mode === 'audit-only' &&
     AUDIT_FINDINGS_AGENTS.has(report.agent)
   ) {
-    if (typeof report.findings !== 'string' || !report.findings.trim()) {
-      errors.push('findings must be a non-empty string for audit-only done')
+    const severity = report.findingsSeverity
+    const hasFindings =
+      typeof report.findings === 'string' && report.findings.trim() !== ''
+    if (severity == null) {
+      errors.push(
+        'findingsSeverity is required for audit-only done (none | warning | critical)',
+      )
+    } else if (severity === 'none') {
+      if (hasFindings) {
+        errors.push(
+          'findingsSeverity: none contradicts non-empty findings — raise the severity or clear the findings',
+        )
+      }
+    } else if (!hasFindings) {
+      errors.push(
+        `findings must be a non-empty string when findingsSeverity is ${severity}`,
+      )
     }
   }
 

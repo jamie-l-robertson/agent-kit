@@ -63,6 +63,11 @@
     },
     "recommendNext": { "type": "string" },
     "findings": { "type": ["string", "null"] },
+    "findingsSeverity": {
+      "type": "string",
+      "description": "Typed trigger for the audit fix-loop. reviewer/security/risk must set it on done; none means nothing to fix.",
+      "enum": ["none", "warning", "critical"]
+    },
     "evidence": { "type": ["string", "null"] },
     "mcpUsed": { "type": ["string", "null"] },
     "tests": { "type": ["string", "null"] },
@@ -117,10 +122,24 @@
         "required": ["status", "mode", "agent"]
       },
       "then": {
-        "required": ["findings"],
-        "properties": {
-          "findings": { "type": "string", "minLength": 1 }
-        }
+        "required": ["findingsSeverity"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "findingsSeverity": { "const": "none" } },
+              "required": ["findingsSeverity"]
+            },
+            "then": {
+              "properties": { "findings": { "maxLength": 0 } }
+            },
+            "else": {
+              "required": ["findings"],
+              "properties": {
+                "findings": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        ]
       }
     },
     {
