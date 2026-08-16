@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cursor-agent-kit.local/schemas/worker-report.schema.json",
+  "$id": "https://agent-kit.local/schemas/worker-report.schema.json",
   "title": "WorkerReport",
   "type": "object",
   "additionalProperties": true,

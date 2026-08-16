@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cursor-agent-kit.local/schemas/run-event.schema.json",
+  "$id": "https://agent-kit.local/schemas/run-event.schema.json",
   "title": "AgentKitRunEvent",
   "description": "One JSONL line under .claude/memory/runs/<date>.jsonl (or AGENT_KIT_RUN_EVENTS_PATH)",
   "type": "object",

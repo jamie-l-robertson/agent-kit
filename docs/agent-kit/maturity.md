@@ -42,4 +42,3 @@ Shipped in full; per-phase build logs live in the stage-gate roadmap plan.
 
 - **CI eval loop** — deterministic `npm run eval`, adversarial routing cases. Not started.
 - **Demo consumer** — filled stack-card example app. Not started.
-- **Package rename** — the kit is still named `cursor-agent-kit` on a Claude-only branch. Cosmetic but touches install URLs, `.kit-version` assertions, and the README.

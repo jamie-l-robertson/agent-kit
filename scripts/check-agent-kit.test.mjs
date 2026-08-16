@@ -13,8 +13,8 @@ import {
 } from './check-agent-kit.mjs'
 
 test('parseKitVersion reads kit: and source:', () => {
-  const fields = parseKitVersion('kit: cursor-agent-kit@0.2.0\nsource: repo\n')
-  assert.equal(fields.kit, 'cursor-agent-kit@0.2.0')
+  const fields = parseKitVersion('kit: agent-kit@0.2.0\nsource: repo\n')
+  assert.equal(fields.kit, 'agent-kit@0.2.0')
   assert.equal(fields.source, 'repo')
 })
 
@@ -22,7 +22,7 @@ test('assertKitVersion rejects bare semver and missing kit:', () => {
   assert.equal(assertKitVersion('0.2.0').ok, false)
   assert.equal(assertKitVersion('').ok, false)
   assert.equal(assertKitVersion('source: repo\n').ok, false)
-  assert.equal(assertKitVersion('kit: cursor-agent-kit@0.2.0\nsource: repo\n').ok, true)
+  assert.equal(assertKitVersion('kit: agent-kit@0.2.0\nsource: repo\n').ok, true)
 })
 
 test('checkDesignSystemAdherence: empty stub requires n/a adherence', () => {
