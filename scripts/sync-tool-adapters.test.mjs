@@ -7,6 +7,8 @@ import {
   validateWorkers,
   composedAgentSource,
   parseFrontmatter,
+  protocolDrift,
+  expectedProtocolBlocks,
 } from './sync-tool-adapters.mjs'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -81,4 +83,48 @@ test('every .claude agent has model frontmatter and no leftover markers', () => 
       `${f} still has protocol/include markers`,
     )
   }
+})
+
+test('protocolDrift catches a dropped protocol bullet, naming the missing line', () => {
+  const expected = expectedProtocolBlocks()
+  const raw = composedAgentSource(
+    `---\nname: demo\nmodel: inherit\n---\n\nIntro\n\n<!-- protocol:readonly -->\n`,
+  )
+  assert.deepEqual(protocolDrift('demo.md', raw, expected), [])
+
+  const stale = raw.replace(/^- \*\*No DIY bypass\*\*.*$\n/m, '')
+  const drift = protocolDrift('demo.md', stale, expected)
+  assert.equal(drift.length, 1)
+  assert.match(drift[0], /demo\.md "## Shared invariants" is stale/)
+  assert.match(drift[0], /missing: - \*\*No DIY bypass\*\*/)
+})
+
+test('protocolDrift allows agent-specific ### sub-sections after a block', () => {
+  const expected = expectedProtocolBlocks()
+  const raw =
+    composedAgentSource(
+      `---\nname: demo\nmodel: inherit\n---\n\nIntro\n\n<!-- protocol:implement -->\n`,
+    ) + '\n### Standards\n\nExtra agent-specific prose.\n'
+  assert.deepEqual(protocolDrift('demo.md', raw, expected), [])
+})
+
+test('protocolDrift flags a whole missing protocol section', () => {
+  const expected = expectedProtocolBlocks()
+  const raw = composedAgentSource(
+    `---\nname: demo\nmodel: inherit\n---\n\nIntro\n\n<!-- protocol:implement -->\n`,
+  ).replace(/## Worker-report JSON \(canonical\)[\s\S]*$/, '')
+  const drift = protocolDrift('demo.md', raw, expected)
+  assert.ok(
+    drift.some((m) => /missing whole protocol sections/.test(m)),
+    drift.join('\n'),
+  )
+})
+
+test('live agents match .claude/protocols/ (protocol drift check)', () => {
+  const expected = expectedProtocolBlocks()
+  const dir = join(root, '.claude', 'agents')
+  const drift = readdirSync(dir)
+    .filter((x) => x.endsWith('.md'))
+    .flatMap((f) => protocolDrift(f, readFileSync(join(dir, f), 'utf8'), expected))
+  assert.deepEqual(drift, [], drift.join('\n'))
 })
