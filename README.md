@@ -23,6 +23,55 @@ This folder is a **copy-friendly template**. Drop its contents into a project ro
 | `scripts/sync-project-skills.mjs` | Inventory kit vs project skills → `AGENTS.md` + `.claude/memory/skills-inventory.md` |
 | `.gitignore` | Ignores hook state dirs |
 
+## How a managed run flows
+
+```mermaid
+flowchart TD
+    A([User request]) --> B{"manager:<br/>trivial, one owner?"}
+    B -- "yes, fast-path" --> H["implementer runs<br/>frontend / backend / tester / …"]
+    B -- "no" --> D["planner<br/>read-only"]
+
+    D --> E["plan validated<br/>→ marked pending"]
+    E --> F["manager spawns<br/>first implementer"]
+    F --> G{{"PreToolUse gate<br/>ask user, quoting the plan"}}
+    G -- "approved" --> H
+    G -- "declined" --> A
+
+    H --> W{{"PreToolUse gate<br/>worker tries to spawn?"}}
+    W -- "yes" --> WD["denied — return blocked,<br/>manager re-dispatches"]
+    WD --> H
+
+    H --> I{{"SubagentStop gate<br/>JSON report valid?"}}
+    I -- "no" --> H
+    I -- "yes" --> J["tasks.md + run event<br/>token count from transcript"]
+
+    J --> K{"auditor or tester<br/>typed signal?"}
+    K -- "clean" --> Z
+    K -- "critical / product failure" --> L[["fix-loop gate opens<br/>review · test · secRisk"]]
+    L --> M["manager dispatches the named owner,<br/>then re-runs the auditor"]
+    M --> H
+    L -. "after 2 rounds" .-> O["ask the user:<br/>waive or continue"]
+    O --> Z
+
+    Z{{"SubagentStop gate<br/>any fix-loop still open?"}} -- "yes" --> M
+    Z -- "no" --> R([Final report])
+
+    classDef gate fill:#fff3cd,stroke:#b8860b,color:#000
+    class G,W,I,Z gate
+```
+
+### What each gate actually does
+
+| Gate | Hook | Hard or advisory |
+|---|---|---|
+| **Nesting** — workers cannot spawn workers | `PreToolUse` on `Agent`/`Task` | **Hard deny.** Fail-closed: an unmapped caller is denied too |
+| **Plan approval** — the user sees the plan before implementers start | `PreToolUse` on `Agent`/`Task` | **Ask**, and a strong nudge only — `AGENT_KIT_PLAN_GATE=off`, hook errors, and bypass permission modes all let work through |
+| **Access integrity** — no `gh issue` / tracker fetches behind an MCP's back | `PreToolUse` on `Bash` | **Hard deny**, narrowly scoped to kit agents and tracker hosts |
+| **Worker report** — every specialist ends with a valid JSON fence | `SubagentStop` | **Blocks** until valid, then goes advisory after 2 retries so one bad worker cannot burn the session |
+| **Fix-loops** — a critical finding or a product test failure holds the close | `SubagentStop` | **Blocks** the manager's own stop, capped at 2 rounds. **Only bites when manager runs as a subagent** — as the main agent it is protocol, not enforcement |
+
+Everything else — routing, plan content, evidence truth, PoC exit criteria — is judgment the model owns, and the kit deliberately does not pretend to gate it.
+
 ## Feature matrix (Claude Code)
 
 | Feature | Support |

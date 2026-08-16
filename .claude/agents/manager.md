@@ -117,7 +117,6 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 - **PoC / spike / prototype / "just show me it works"** → **poc-playbook** before dispatch: name the one question, pick greenfield vs existing, and put observable demo criteria in the brief `Success`. A PoC whose Success is a feeling wastes the run.
 - **Otherwise** (multi-step, multi-domain, issue-backed, unclear ownership) → `Task` → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.claude/agents/<name>.md` (`inherit` default).
 - After planner: **gap/ask in chat → implementer spawn (hook asks the user to approve the plan)**. Never dispatch a plan the user has not seen.
-- **Cloud workers** — When briefed for cloud or for long/parallel isolated work, dispatch `Task` with `environment: cloud` (worker gets its own VM/branch). Prefer a local manager unless the whole run is cloud. On close, call out merge-back (PR / user merge) when cloud branches were used. See `docs/agent-kit/phase-2-cloud-agents.md`.
 - Parallelize only when Writable paths do not overlap.
 - A11y: markup/WCAG fixes → `frontend`; harness → `tester`.
 - No-owner: pure cloud-console with no IaC/CLI/creds (plus `AGENTS.md` zones).

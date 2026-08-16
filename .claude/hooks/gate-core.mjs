@@ -8,8 +8,8 @@
  * State: .claude/hooks/state/agent-roles.json (gitignored), or AGENT_KIT_STATE_PATH.
  * Shape: { sessions: { [sessionId]: { roles: { [agentId]: role } } } }
  *
- * Adapters normalize stdin payloads into a common shape and map decisions
- * back to Cursor / Claude hook JSON.
+ * The adapter normalizes stdin payloads into a common shape and maps decisions
+ * back to Claude hook JSON.
  */
 
 import {
@@ -161,7 +161,7 @@ function sleepSync(ms) {
 }
 
 /**
- * Exclusive lock around load→mutate→save (Cursor + Claude adapters share state).
+ * Exclusive lock around load→mutate→save (concurrent hook processes share state).
  * Uses mkdir (atomic) rather than open(wx). Fail-closed on timeout — does not steal.
  */
 export function withStateLock(fn) {
@@ -243,11 +243,9 @@ export function sessionIdOf(normalized) {
 export function resolveSessionId(state, normalized) {
   if (normalized.sessionId) return normalized.sessionId
 
-  const lookupIds = [
-    normalized.parentConversationId,
-    normalized.callerAgentId,
-    normalized.subagentId,
-  ].filter(Boolean)
+  const lookupIds = [normalized.callerAgentId, normalized.subagentId].filter(
+    Boolean,
+  )
 
   for (const [sid, bucket] of Object.entries(state.sessions || {})) {
     const roles = bucket?.roles || {}
@@ -465,10 +463,7 @@ export function resolveEffectiveCaller(state, normalized) {
   const sid = resolveSessionId(state, normalized)
   const roles = ensureSession(state, sid).roles
 
-  const parentOrCaller = [
-    normalized.callerAgentId,
-    normalized.parentConversationId,
-  ].filter(Boolean)
+  const parentOrCaller = [normalized.callerAgentId].filter(Boolean)
 
   for (const id of parentOrCaller) {
     if (roles[id]) return roles[id]
@@ -498,55 +493,6 @@ function emitSpawnDecision(normalized, result, sessionId, callerRoleName) {
   })
 }
 
-export function normalizeCursorPayload(payload) {
-  const event = String(payload.hook_event_name || '')
-  const target = extractCursorTaskType(payload)
-  const toolCallId = payload.tool_call_id ? String(payload.tool_call_id) : ''
-  const subagentId = payload.subagent_id
-    ? String(payload.subagent_id)
-    : toolCallId
-  let sessionId = payload.session_id ? String(payload.session_id) : ''
-  if (
-    !sessionId &&
-    (event === 'sessionStart' || event === 'sessionEnd') &&
-    payload.conversation_id
-  ) {
-    sessionId = String(payload.conversation_id)
-  }
-  return {
-    event,
-    target,
-    conversationId: payload.conversation_id || '',
-    parentConversationId: payload.parent_conversation_id || '',
-    subagentId,
-    toolCallId,
-    callerAgentType: '',
-    callerAgentId: '',
-    sessionId,
-    recordChild: true,
-    // Noon semantics: record roles only; nest deny lives on preToolUse (Task).
-    // Denying here + hooks failClosed killed children → Stopped / Waiting.
-    gateOnStart: false,
-  }
-}
-
-function extractCursorTaskType(payload) {
-  if (payload.subagent_type) return String(payload.subagent_type)
-  const input = payload.tool_input ?? payload.input ?? {}
-  if (typeof input === 'string') {
-    try {
-      const parsed = JSON.parse(input)
-      return parsed.subagent_type ? String(parsed.subagent_type) : ''
-    } catch {
-      return ''
-    }
-  }
-  if (input && typeof input === 'object' && input.subagent_type) {
-    return String(input.subagent_type)
-  }
-  return ''
-}
-
 function extractClaudeSpawnTarget(toolInput) {
   if (!toolInput || typeof toolInput !== 'object') return ''
   if (toolInput.subagent_type) return String(toolInput.subagent_type)
@@ -564,14 +510,11 @@ export function normalizeClaudePayload(payload) {
   const base = {
     event,
     conversationId: payload.session_id || '',
-    parentConversationId: '',
     subagentId: payload.agent_id || '',
-    toolCallId: '',
     callerAgentType: String(payload.agent_type || ''),
     callerAgentId: String(payload.agent_id || ''),
     sessionId: payload.session_id || '',
     toolName,
-    gateOnStart: false,
   }
 
   if (event === 'SubagentStart' || event === 'SubagentStop') {
@@ -581,38 +524,26 @@ export function normalizeClaudePayload(payload) {
   if (event === 'PreToolUse') {
     const isSpawnTool = /^(Agent|Task)$/i.test(toolName)
     if (!isSpawnTool) {
-      return { ...base, target: '', skipGate: true, recordChild: false }
+      return { ...base, target: '', skipGate: true }
     }
     return {
       ...base,
       subagentId: '',
       target: extractClaudeSpawnTarget(payload.tool_input),
       skipGate: false,
-      recordChild: false,
     }
   }
 
-  return { ...base, target: '', recordChild: false }
+  return { ...base, target: '' }
 }
 
-function isSessionStart(event) {
-  return event === 'sessionStart' || event === 'SessionStart'
-}
-
-function isSessionEnd(event) {
-  return event === 'sessionEnd' || event === 'SessionEnd'
-}
-
-function isSubagentStart(event) {
-  return event === 'subagentStart' || event === 'SubagentStart'
-}
-
-function isSubagentStop(event) {
-  return event === 'subagentStop' || event === 'SubagentStop'
-}
+const isSessionStart = (event) => event === 'SessionStart'
+const isSessionEnd = (event) => event === 'SessionEnd'
+const isSubagentStart = (event) => event === 'SubagentStart'
+const isSubagentStop = (event) => event === 'SubagentStop'
 
 function clearIds(normalized, sid) {
-  const ids = [normalized.subagentId, normalized.toolCallId]
+  const ids = [normalized.subagentId]
   if (
     normalized.conversationId &&
     normalized.conversationId !== sid
@@ -631,9 +562,8 @@ function denyNestMessage(effectiveRole) {
 }
 
 function maybeDenySpawn(state, normalized) {
-  // Noon semantics: missing session/conversation/parent ids → treat as root via
-  // resolveEffectiveCaller (no parentOrCaller → ROOT). Do not deny lean Cursor
-  // Task preToolUse payloads — failClosed + identity deny caused Stopped.
+  // Missing session/caller ids → treat as root via resolveEffectiveCaller
+  // (no parentOrCaller → ROOT). A main-agent Task carries no agent_id.
   const effectiveRole = resolveEffectiveCaller(state, normalized)
   if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
     return {
@@ -686,14 +616,6 @@ function decideUnlocked(normalized) {
   }
 
   if (isSubagentStart(event)) {
-    if (normalized.gateOnStart) {
-      const effectiveRole = resolveEffectiveCaller(state, normalized)
-      const denied = maybeDenySpawn(state, normalized)
-      if (denied) {
-        emitSpawnDecision(normalized, denied, sid, effectiveRole)
-        return denied
-      }
-    }
     const role = normalized.target
     const id = normalized.subagentId
     if (PROJECT_AGENTS.has(role) && id) {
@@ -701,19 +623,7 @@ function decideUnlocked(normalized) {
       recordChildRole(state, sid, id, role, normalized.conversationId)
       saveState(state)
     }
-    if (normalized.gateOnStart) {
-      const allowed = {
-        action: 'allow',
-        record: id && role ? { id, role } : undefined,
-      }
-      emitSpawnDecision(
-        normalized,
-        allowed,
-        sid,
-        resolveEffectiveCaller(state, normalized),
-      )
-      return allowed
-    }
+    // SubagentStart records only; the nest gate lives on PreToolUse.
     return {
       action: 'noop',
       record: id && role ? { id, role } : undefined,
@@ -731,18 +641,9 @@ function decideUnlocked(normalized) {
     return denied
   }
 
-  const target = normalized.target
-  const subagentId = normalized.subagentId
-  if (
-    normalized.recordChild !== false &&
-    PROJECT_AGENTS.has(target) &&
-    subagentId
-  ) {
-    // preToolUse conversation_id is the caller — do not alias it to the child
-    rememberRole(state, subagentId, target, sid)
-    saveState(state)
-  }
-
+  // Roles are recorded on SubagentStart, not here: a PreToolUse payload's
+  // conversation id is the caller's, and aliasing it to the child would let a
+  // worker inherit the manager's role.
   const allowed = { action: 'allow' }
   emitSpawnDecision(normalized, allowed, sid, effectiveRole)
   return allowed
