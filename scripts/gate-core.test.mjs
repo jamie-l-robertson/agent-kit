@@ -32,6 +32,8 @@ import {
   planGateEnabled,
   PLAN_SUMMARY_MAX,
   detectTrackerBypass,
+  detectGitWrite,
+  MANAGER_GIT_ALLOWED,
   setGate,
   clearGate,
   readGates,
@@ -736,4 +738,60 @@ test('sessionEnd wipes gates with the session', () => {
     callerAgentId: '',
   })
   assert.deepEqual(readGates('s-end'), {})
+})
+
+// --- git write policy ---
+
+test('detectGitWrite flags every way an agent could move the repo', () => {
+  for (const [cmd, verb] of [
+    ['git commit -m x', 'commit'],
+    ['git push', 'push'],
+    ['git push --force origin main', 'push'],
+    ['cd /tmp && git reset --hard', 'reset'],
+    ['git checkout -b feature', 'checkout'],
+    ['git switch main', 'switch'],
+    ['git merge main', 'merge'],
+    ['git rebase -i HEAD~2', 'rebase'],
+    ['git stash', 'stash'],
+    ['git add -A', 'add'],
+    ['git tag v1', 'tag'],
+    ['git cherry-pick abc123', 'cherry-pick'],
+  ]) {
+    assert.equal(detectGitWrite(cmd), verb, `should flag: ${cmd}`)
+  }
+})
+
+test('detectGitWrite leaves read-only git alone', () => {
+  for (const cmd of [
+    'git status',
+    'git status --porcelain',
+    'git diff HEAD~1',
+    'git log --oneline -5',
+    'git show abc123',
+    'git blame src/a.ts',
+    'npm test',
+    'legit commit of prose',
+  ]) {
+    assert.equal(detectGitWrite(cmd), '', `should allow: ${cmd}`)
+  }
+})
+
+test('git branch is a write only when it creates, deletes or renames', () => {
+  for (const cmd of ['git branch feature-x', 'git branch -D old', 'git branch -m new']) {
+    assert.equal(detectGitWrite(cmd), 'branch', `should flag: ${cmd}`)
+  }
+  for (const cmd of [
+    'git branch --list',
+    'git branch --show-current',
+    'git branch -a',
+    'git branch -r',
+    'git branch -v',
+    'git branch',
+  ]) {
+    assert.equal(detectGitWrite(cmd), '', `listing is read-only: ${cmd}`)
+  }
+})
+
+test('MANAGER_GIT_ALLOWED is exactly the recoverable local pair', () => {
+  assert.deepEqual([...MANAGER_GIT_ALLOWED].sort(), ['add', 'commit'])
 })

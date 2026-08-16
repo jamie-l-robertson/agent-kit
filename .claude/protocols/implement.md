@@ -17,7 +17,7 @@
 - **Writable paths** (optional): if present, only edit those paths under `implement` or `document`.
 - **Before `needs-decision`**: prefer **no edits**. If partial work was unavoidable, list under `changed` and leave the repo consistent.
 - **On resume**: continue from prior `needs` — do not re-discover from scratch.
-- **Git**: read-only `status` / `diff` / `log` allowed. No write operations (commit, checkout, stash, revert, branch) unless the brief grants human approve for a destructive git action.
+- **Git**: read-only `status` / `diff` / `log` / `show` only. **Never** commit, add, push, branch, checkout, stash, reset, or rebase — there is no brief that grants it, and the hook denies it. Leave your work in the tree and report; the manager integrates and commits.
 - **Lint**: prefer the narrow path lint command from `AGENTS.md` (or project equivalent) over repo-wide lint.
 - **Evidence**: When Success implies tests/commands, fill JSON `evidence` and set `verificationResult` to `pass` or `fail`. Prefer **verify-evidence**. Never claim green without output.
 - **MCP**: Prefer brief `MCP prewarmed` servers. After meaningful MCP calls, list under JSON `mcpUsed` (manager may batch to mcp-usage log). URL standards → MCP only (see ref-resolution).
