@@ -90,6 +90,16 @@ function planKeys(bucket) {
     out.planApproval = bucket.planApproval
   }
   if (typeof bucket?.planSummary === 'string') out.planSummary = bucket.planSummary
+  if (bucket?.gates && typeof bucket.gates === 'object') {
+    const gates = {}
+    for (const key of GATE_KEYS) {
+      const g = bucket.gates[key]
+      if (g && typeof g === 'object') {
+        gates[key] = { rounds: Number(g.rounds) || 1, owner: String(g.owner || '') }
+      }
+    }
+    if (Object.keys(gates).length) out.gates = gates
+  }
   return out
 }
 
@@ -351,6 +361,58 @@ export function detectTrackerBypass(command) {
     return `\`${fetcher[1]}\` to ${cmd.match(TRACKER_HOST)[1]}`
   }
   return ''
+}
+
+/**
+ * Audit fix-loop gates. A pending gate holds the managed close until the owner
+ * fixes and the auditor re-passes.
+ *
+ * `review`  — reviewer done with findingsSeverity: critical
+ * `test`    — tester done with verificationResult: fail blaming product code
+ * `secRisk` — security/risk done with findingsSeverity: critical
+ */
+export const GATE_KEYS = ['review', 'test', 'secRisk']
+
+/** Rounds before a gate stops blocking and becomes the user's call. */
+export const MAX_GATE_ROUNDS = 2
+
+/** Owners a tester may hand a product failure to — a harness fix is tester's own. */
+export const IMPLEMENTER_OWNERS = new Set([
+  'frontend',
+  'backend',
+  'devops',
+  'infrastructure',
+  'documenter',
+])
+
+export function readGates(sessionId) {
+  return loadState().sessions[sessionId || FALLBACK_SESSION]?.gates || {}
+}
+
+/** Open or re-open a gate; each call counts one round. */
+export function setGate(sessionId, key, owner = '') {
+  if (!GATE_KEYS.includes(key)) return
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    const prev = bucket.gates?.[key]
+    bucket.gates = {
+      ...(bucket.gates || {}),
+      [key]: { rounds: (prev?.rounds || 0) + 1, owner: String(owner || '') },
+    }
+    saveState(state)
+  })
+}
+
+export function clearGate(sessionId, key) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+    if (!bucket?.gates?.[key]) return
+    delete bucket.gates[key]
+    if (!Object.keys(bucket.gates).length) delete bucket.gates
+    saveState(state)
+  })
 }
 
 export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {

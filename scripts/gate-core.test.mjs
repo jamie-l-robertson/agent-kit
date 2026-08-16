@@ -33,6 +33,10 @@ import {
   planGateEnabled,
   PLAN_SUMMARY_MAX,
   detectTrackerBypass,
+  setGate,
+  clearGate,
+  readGates,
+  MAX_GATE_ROUNDS,
 } from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -983,4 +987,56 @@ test('detectTrackerBypass leaves ordinary commands alone', () => {
   ]) {
     assert.equal(detectTrackerBypass(cmd), '', `should allow: ${cmd}`)
   }
+})
+
+// --- audit fix-loop gates (Phase 3) ---
+
+test('gates survive a subsequent saveState', () => {
+  setGate('s1', 'review', 'frontend')
+  const state = loadState()
+  rememberRole(state, 'fe-1', 'frontend', 's1')
+  saveState(state)
+  assert.deepEqual(readGates('s1'), { review: { rounds: 1, owner: 'frontend' } })
+})
+
+test('setGate counts rounds so a loop cannot run forever', () => {
+  setGate('s1', 'review', 'frontend')
+  setGate('s1', 'review', 'backend')
+  assert.deepEqual(readGates('s1').review, { rounds: 2, owner: 'backend' })
+})
+
+test('gates are independent and clear independently', () => {
+  setGate('s1', 'review', 'frontend')
+  setGate('s1', 'test', 'backend')
+  setGate('s1', 'secRisk', 'backend')
+  assert.deepEqual(Object.keys(readGates('s1')).sort(), ['review', 'secRisk', 'test'])
+  clearGate('s1', 'test')
+  assert.deepEqual(Object.keys(readGates('s1')).sort(), ['review', 'secRisk'])
+  assert.equal(readGates('s1').test, undefined)
+})
+
+test('clearGate on an unset gate is a no-op, not a crash', () => {
+  clearGate('s-none', 'review')
+  assert.deepEqual(readGates('s-none'), {})
+})
+
+test('a gate past the round cap is reported, not silently dropped', () => {
+  for (let i = 0; i <= MAX_GATE_ROUNDS; i++) setGate('s1', 'review', 'frontend')
+  const g = readGates('s1').review
+  assert.ok(g.rounds > MAX_GATE_ROUNDS, 'the count keeps climbing')
+})
+
+test('sessionEnd wipes gates with the session', () => {
+  setGate('s-end', 'review', 'frontend')
+  decide({
+    event: 'SessionEnd',
+    sessionId: 's-end',
+    conversationId: 's-end',
+    subagentId: '',
+    parentConversationId: '',
+    target: '',
+    callerAgentType: '',
+    callerAgentId: '',
+  })
+  assert.deepEqual(readGates('s-end'), {})
 })

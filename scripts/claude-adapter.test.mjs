@@ -378,3 +378,142 @@ test('a report quoting a forbidden fallback goes advisory, not block', () => {
     assert.match(out.hookSpecificOutput.additionalContext, /bounce/i)
   })
 })
+
+// --- audit fix-loops (Phase 3) ---
+
+const auditReport = (over = {}) => ({
+  status: 'done',
+  agent: 'reviewer',
+  mode: 'audit-only',
+  goal: 'review the pager',
+  changed: [],
+  recommendNext: 'frontend: fix the off-by-one',
+  humanApprove: 'n/a',
+  verificationResult: 'n/a',
+  findings: 'off-by-one on the last page',
+  findingsSeverity: 'critical',
+  ...over,
+})
+
+const stop = (agent, report) => ({
+  hook_event_name: 'SubagentStop',
+  session_id: 's1',
+  agent_id: `${agent}-1`,
+  agent_type: agent,
+  last_assistant_message: fence(report),
+})
+
+const managerClose = {
+  hook_event_name: 'SubagentStop',
+  session_id: 's1',
+  agent_id: 'mgr-1',
+  agent_type: 'manager',
+  last_assistant_message: fence({
+    status: 'done',
+    agent: 'manager',
+    mode: 'audit-only',
+    goal: 'ship the pager',
+    changed: [],
+    recommendNext: 'none',
+    humanApprove: 'n/a',
+    verificationResult: 'n/a',
+  }),
+}
+
+test('a critical review holds the managed close, naming the owner', () => {
+  withStateDir((dir) => {
+    runAdapter(stop('reviewer', auditReport()), dir)
+    const out = runAdapter(managerClose, dir)
+    assert.equal(out.decision, 'block')
+    assert.match(out.reason, /review/)
+    assert.match(out.reason, /frontend/, 'must name who fixes it')
+  })
+})
+
+test('warning and none do not hold the close', () => {
+  withStateDir((dir) => {
+    runAdapter(
+      stop('reviewer', auditReport({ findingsSeverity: 'warning' })),
+      dir,
+    )
+    assert.deepEqual(runAdapter(managerClose, dir), {})
+  })
+})
+
+test('a clean re-review clears the gate and lets the close through', () => {
+  withStateDir((dir) => {
+    runAdapter(stop('reviewer', auditReport()), dir)
+    assert.equal(runAdapter(managerClose, dir).decision, 'block')
+    runAdapter(
+      stop('reviewer', auditReport({ findingsSeverity: 'none', findings: '' })),
+      dir,
+    )
+    assert.deepEqual(runAdapter(managerClose, dir), {})
+  })
+})
+
+test('security and risk open their own gate, independent of review', () => {
+  withStateDir((dir) => {
+    runAdapter(stop('security', auditReport({ agent: 'security' })), dir)
+    assert.match(runAdapter(managerClose, dir).reason, /secRisk/)
+    runAdapter(
+      stop('security', auditReport({ agent: 'security', findingsSeverity: 'none', findings: '' })),
+      dir,
+    )
+    assert.deepEqual(runAdapter(managerClose, dir), {})
+  })
+})
+
+const testerReport = (over = {}) => ({
+  status: 'done',
+  agent: 'tester',
+  mode: 'verify-only',
+  goal: 'regression run',
+  changed: [],
+  recommendNext: 'frontend: fix the pager query',
+  humanApprove: 'n/a',
+  verificationResult: 'fail',
+  evidence: 'vitest → 1 failed',
+  ...over,
+})
+
+test('a failing test that blames product code holds the close', () => {
+  withStateDir((dir) => {
+    runAdapter(stop('tester', testerReport()), dir)
+    const out = runAdapter(managerClose, dir)
+    assert.equal(out.decision, 'block')
+    assert.match(out.reason, /test/)
+  })
+})
+
+test('tester failures that blame nobody do not open a loop', () => {
+  withStateDir((dir) => {
+    runAdapter(stop('tester', testerReport({ recommendNext: 'none' })), dir)
+    assert.deepEqual(
+      runAdapter(managerClose, dir),
+      {},
+      'harness-only work is the tester own fix',
+    )
+  })
+})
+
+test('a blocked tester escalates instead of looping', () => {
+  withStateDir((dir) => {
+    runAdapter(
+      stop('tester', testerReport({ status: 'blocked', needs: 'no dev server' })),
+      dir,
+    )
+    assert.deepEqual(runAdapter(managerClose, dir), {})
+  })
+})
+
+test('past the round cap the gate stops blocking and becomes the user call', () => {
+  withStateDir((dir) => {
+    for (let i = 0; i <= 2; i++) {
+      runAdapter(stop('reviewer', auditReport()), dir)
+    }
+    const out = runAdapter(managerClose, dir)
+    assert.equal(out.decision, undefined, 'must not hostage the close forever')
+    assert.match(out.hookSpecificOutput.additionalContext, /ask the user/i)
+  })
+})

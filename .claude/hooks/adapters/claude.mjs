@@ -24,6 +24,11 @@ import {
   readPlanApproval,
   approvePlan,
   detectTrackerBypass,
+  setGate,
+  clearGate,
+  readGates,
+  MAX_GATE_ROUNDS,
+  IMPLEMENTER_OWNERS,
 } from '../gate-core.mjs'
 import { appendTaskMemory, resolveTokenCount } from '../task-log.mjs'
 import {
@@ -102,6 +107,89 @@ function bypassAdvisory(report) {
   return `This report quotes ${matched} — trackers and standards URLs are MCP-only. Manager: bounce for an honest \`mcpUsed\`, or accept \`blocked\` naming the missing server.`
 }
 
+/** Owner named as `frontend: do the thing`, or bare. '' when nobody is blamed. */
+function ownerFrom(recommendNext) {
+  const first = String(recommendNext || '')
+    .trim()
+    .split(/[:\s]/)[0]
+    .toLowerCase()
+  return IMPLEMENTER_OWNERS.has(first) ? first : ''
+}
+
+/**
+ * Open or close an audit fix-loop from a valid report.
+ *
+ * Only typed signals count: `findingsSeverity` for the auditors, and for tester
+ * a failed verification that actually blames an implementer. A tester that is
+ * `blocked` (no dev server, missing env) escalates to the user instead — looping
+ * an implementer over broken tooling is the failure mode this must avoid.
+ */
+function applyGates(sessionId, agentType, report) {
+  const severity = String(report.findingsSeverity || '')
+  const owner = ownerFrom(report.recommendNext)
+  const done = String(report.status) === 'done'
+
+  if (agentType === 'reviewer' && done) {
+    severity === 'critical'
+      ? setGate(sessionId, 'review', owner)
+      : clearGate(sessionId, 'review')
+  }
+  if ((agentType === 'security' || agentType === 'risk') && done) {
+    severity === 'critical'
+      ? setGate(sessionId, 'secRisk', owner)
+      : clearGate(sessionId, 'secRisk')
+  }
+  if (agentType === 'tester' && done) {
+    const productFailure =
+      String(report.verificationResult) === 'fail' && owner !== ''
+    productFailure ? setGate(sessionId, 'test', owner) : clearGate(sessionId, 'test')
+  }
+}
+
+const GATE_LABEL = {
+  review: 'reviewer found a critical issue',
+  secRisk: 'security/risk found a critical issue',
+  test: 'a test failure blames product code',
+}
+
+/**
+ * Hold the managed close while a fix-loop is open.
+ *
+ * There is no close tool — the Final report is plain text — so the only lever is
+ * the manager's own SubagentStop. **This only fires when manager runs as a
+ * subagent.** A user running manager as the main agent gets protocol, not
+ * enforcement; do not read this gate as coverage it does not have.
+ *
+ * @returns {{ handled: boolean, advisory: string }}
+ */
+function holdManagedClose(sessionId) {
+  const gates = readGates(sessionId)
+  const open = Object.entries(gates)
+  if (!open.length) return { handled: false, advisory: '' }
+
+  const lines = open.map(
+    ([key, g]) =>
+      `- \`${key}\` — ${GATE_LABEL[key] || key}${g.owner ? `; owner: \`${g.owner}\`` : ''} (round ${g.rounds})`,
+  )
+
+  // Cap the loop: a flake or a stubborn nit must not hostage the close forever.
+  if (open.some(([, g]) => g.rounds > MAX_GATE_ROUNDS)) {
+    write({
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStop',
+        additionalContext: `Fix-loop still open after ${MAX_GATE_ROUNDS} rounds:\n${lines.join('\n')}\n\nStop looping — ask the user to waive it or keep going, then close either way.`,
+      },
+    })
+    return { handled: true, advisory: '' }
+  }
+
+  write({
+    decision: 'block',
+    reason: `Cannot close yet — an audit fix-loop is open:\n${lines.join('\n')}\n\nDispatch the owner to fix, re-run the auditor, then close. If this is a false alarm, ask the user to waive it.`,
+  })
+  return { handled: true, advisory: '' }
+}
+
 /**
  * Validate a kit worker's final message. Blocks until the fence is valid,
  * then goes advisory so a bad worker cannot burn the session.
@@ -149,6 +237,10 @@ function handleSubagentStop(payload) {
     if (agentType === 'planner' && String(report.status) === 'done') {
       planGateSafe(() => setPlanPending(sessionId, planSummaryOf(report)))
     }
+
+    applyGates(sessionId, agentType, report)
+    if (agentType === MANAGER) return holdManagedClose(sessionId)
+
     return { handled: false, advisory: bypassAdvisory(report) }
   }
 

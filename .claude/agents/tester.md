@@ -156,6 +156,17 @@ You own axe/Playwright **harness**, config, and flake. Axe **failures** / WCAG r
 4. Re-run narrow suite; fill Evidence.
 5. Return worker-report JSON.
 
+## `recommendNext` is a typed trigger
+
+On `done` + `verificationResult: fail`, naming an implementer (`frontend`, `backend`, `devops`, `infrastructure`, `documenter`) opens a fix-loop: the manager must route that owner and re-run you before it can close. So point the finger only when the **product** is at fault.
+
+| Situation | `recommendNext` |
+|---|---|
+| A product bug the failing test proves | the owning implementer — opens the loop |
+| Harness, fixture, or flake you own | `none` — fix it yourself; no loop |
+| Failing tests are the deliverable (`verify-only`, brief said so) | `none` |
+| Could not run at all — no dev server, missing env, tooling down | `status: blocked` with `needs`, **not** `fail`. A blocked run escalates to the user; blaming an implementer for broken tooling loops them over nothing |
+
 ## Constraints
 
 - No git writes; no env/deploy/CMS schema changes to force green. Attribute pre-existing vs introduced failures.

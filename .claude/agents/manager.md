@@ -208,11 +208,29 @@ UI title `documenter [inherit]: agent-memory append` — Writable paths: `.claud
 
 UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/memory/mcp-usage.md` only. Batch server/tool/outcome lines; no secrets/payloads. Append via `node scripts/append-memory.mjs mcp` (JSON on stdin).
 
+## Audit fix-loops
+
+A `critical` audit finding or a product test failure opens a **gate** that holds the close. Gates are independent; more than one can be open.
+
+| Gate | Opens when | Closes when |
+|---|---|---|
+| `review` | `reviewer` `done` + `findingsSeverity: critical` | owner fixes, reviewer re-runs and returns `warning`/`none` |
+| `secRisk` | `security`/`risk` `done` + `findingsSeverity: critical` | owner fixes, that auditor re-runs clean |
+| `test` | `tester` `done` + `verificationResult: fail` + `recommendNext` naming an implementer | owner fixes, tester re-runs and passes |
+
+While a gate is open: **schedule the owner, do not write the Final report.** Dispatch the named owner, then re-dispatch the auditor — a gate only clears on a fresh clean report from the same agent.
+
+**Never** open a loop on `blocked` (missing env, no dev server, tooling down) — that is a user escalation, not an implementer's bug. Looping frontend over a broken harness is the failure mode this exists to avoid.
+
+**Round cap 2.** Past that the hook stops blocking and says so; **ask the user** to waive or continue, then close either way. A flake must not hostage the close.
+
+**What is actually enforced:** the hook blocks the manager's own `SubagentStop`, so it only bites **when you run as a subagent**. Running as the main agent, this is protocol you follow, not a gate that stops you. Do not tell the user a close was "verified by the gate" when it was not.
+
 ## Handling statuses
 
 | Status | Action |
 |--------|--------|
-| `done` | **response-sanity** pass + bounce list; relay. Planner `done` → raise Gaps in chat, then dispatch (the hook asks the user to approve the plan). |
+| `done` | **response-sanity** pass + bounce list; relay. Auditor/tester `done` may open a fix-loop gate — check before closing. Planner `done` → raise Gaps in chat, then dispatch (the hook asks the user to approve the plan). |
 | `needs-decision` | Ask user; memory-append; resume (planner gaps / UI design clarity included) |
 | `blocked` | Unblock or escalate |
 | `out-of-scope` | Re-route |
