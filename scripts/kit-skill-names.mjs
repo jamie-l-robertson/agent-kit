@@ -13,4 +13,6 @@ export const KNOWN_KIT_SKILL_NAMES = new Set([
   'manager',
   'sync-project-skills',
   'response-sanity',
+  'poc-playbook',
+  'bro',
 ])

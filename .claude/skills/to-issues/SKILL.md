@@ -31,6 +31,24 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - Prefer many thin slices over few thick ones
 </vertical-slice-rules>
 
+### 3b. Check each slice before you present it
+
+A checklist you run yourself — not a gate, and nothing enforces it. Bad slices are
+cheap to fix here and expensive to fix once they are issues people have grabbed.
+
+For each slice:
+
+- [ ] **Vertical, not horizontal.** It touches every layer the feature needs. "Add the DB column" is a horizontal slice wearing a ticket.
+- [ ] **Demoable alone.** You can say what a human would see when it is done. If the answer is "nothing yet", merge it into the slice that makes it visible.
+- [ ] **One owner.** A slice needing frontend *and* backend in lockstep is usually two slices or one honest bigger one — not a coordination puzzle for whoever grabs it.
+- [ ] **Acceptance criteria are checkable.** A command, a visible behaviour, or an artifact. "Works correctly" is not acceptance.
+- [ ] **Dependencies are real.** `Blocked by` means cannot start, not "would be tidier after". False blockers serialize work that could run in parallel.
+- [ ] **HITL is honest.** Marked HITL only if a human decision is genuinely required. Marking AFK to look efficient just means the agent stops halfway and waits anyway.
+- [ ] **Sized to finish.** If you cannot picture it landing in one sitting, split it.
+
+Anything that fails, fix before step 4 — or raise it as an open question when you
+quiz the user, rather than quietly shipping a slice you already doubt.
+
 ### 4. Quiz the user
 
 Present the proposed breakdown as a numbered list. For each slice, show:

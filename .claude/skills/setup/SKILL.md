@@ -34,7 +34,7 @@ Copy and track:
 Setup progress:
 - [ ] 0. Existing AGENTS.md / CLAUDE.md — offer append blocks if project-owned
 - [ ] 1. Scan AGENTS.md + repo
-- [ ] 2. Confirm inferred defaults
+- [ ] 2. Confirm inferred defaults (incl. greenfield vs existing)
 - [ ] 3. Stack fields (incl. design system + standards + MCP)
 - [ ] 4. Path ownership
 - [ ] 5. Narrow commands
@@ -87,6 +87,17 @@ Never read or store secret values from `.env`.
 ### 3. Field order
 
 Ask only for fields still missing after inference. Suggested order:
+
+0. **Project mode** — `greenfield` | `existing`. Infer it (empty-ish repo, no lockfile, no `src`/`app` → greenfield) and confirm in one question. It changes how hard you push on the rest:
+
+   | | Greenfield | Existing |
+   |---|---|---|
+   | Ownership rows | Most are genuinely unknown — write `n/a` and move on. Do **not** interrogate the user about a structure that does not exist yet | Infer from the directory layout, confirm the surprising ones only |
+   | Commands | `n/a` until there is something to run. A made-up test command is worse than a blank | Detect from `package.json`; confirm |
+   | Standards / design system | Usually `n/a`. Offer to revisit after the first real feature | Look for existing docs first |
+   | Required env | From `.env.example` names if present, else `n/a` | Same |
+
+   `n/a` is a real answer everywhere, and a filled-in guess is worse than a blank: agents read this card as fact. Say so, and tell the user setup is re-runnable as the project grows.
 
 1. **App** — framework + major mode (e.g. Next.js App Router + React)
 2. **Database** — or `none` / `n/a`
@@ -151,7 +162,8 @@ Also verify/report:
 2. Worker names in `.claude/hooks/gate-core.mjs` (`WORKERS`) match `.claude/agents/*.md` basenames (excluding `manager`) — see `docs/agent-kit/routing-scenarios.md` specialist-cap.
 3. If you edited `.claude/` (agents/skills/hooks/rules), run `node scripts/sync-tool-adapters.mjs --check` / `node scripts/sync-project-skills.mjs` before commit, then **commit** `.claude/`.
 4. Remind: Context7 / other **Required MCP** must be installable for prewarm.
-5. Point the user at `.claude/protocols/context-practices.md` — `/clear` between unrelated tasks, `/compact focus on …` mid-task, `/context` to diagnose. Do **not** bake compaction settings into the project; they are the user's call.
+5. If the work ahead is a PoC / spike, point at **poc-playbook** — demo criteria belong in the brief before anyone writes code.
+6. Point the user at `.claude/protocols/context-practices.md` — `/clear` between unrelated tasks, `/compact focus on …` mid-task, `/context` to diagnose. Do **not** bake compaction settings into the project; they are the user's call.
 
 ## Done criteria
 
