@@ -168,6 +168,8 @@ Bounce / resume when:
 
 **Required** on every managed close. Missing sections = process fail. Token figures are **counts only** (no in/out/USD). Use `n/a` when the host and worker reports did not expose a total.
 
+Run `node scripts/format-final-report.mjs --session <sessionId>` and fill the `<fill …>` lines. It renders the headings, Agents used, Token costs and Rollup from `tasks.md` for that session — do not hand-type those, and do not drop the `~` or a `(partial …)` note it emits. Outcomes, Verification and Manual QA are yours.
+
 ```
 [manager] <one-line outcome>
 
@@ -198,11 +200,11 @@ Canonical template + field meanings: **brief-hygiene** (`.claude/skills/brief-hy
 
 ### Memory append (decisions)
 
-UI title `documenter [inherit]: agent-memory append` — Writable paths: `.claude/memory/decisions.md` only.
+UI title `documenter [inherit]: agent-memory append` — Writable paths: `.claude/memory/decisions.md` only. Brief the documenter to append via `node scripts/append-memory.mjs decisions` (JSON on stdin) rather than hand-writing the block.
 
 ### Memory append (MCP usage)
 
-UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/memory/mcp-usage.md` only. Batch server/tool/outcome lines; no secrets/payloads.
+UI title `documenter [inherit]: mcp-usage append` — Writable paths: `.claude/memory/mcp-usage.md` only. Batch server/tool/outcome lines; no secrets/payloads. Append via `node scripts/append-memory.mjs mcp` (JSON on stdin).
 
 ## Handling statuses
 

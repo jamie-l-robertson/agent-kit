@@ -27,6 +27,8 @@ export const KIT_PERMISSIONS = [
   'Bash(node scripts/check-agent-kit.mjs:*)',
   'Bash(node scripts/sync-tool-adapters.mjs:*)',
   'Bash(node scripts/sync-project-skills.mjs:*)',
+  'Bash(node scripts/append-memory.mjs:*)',
+  'Bash(node scripts/format-final-report.mjs:*)',
 ]
 
 /** Agent|Task = call-graph gate; Bash = tracker-bypass deny (access integrity). */

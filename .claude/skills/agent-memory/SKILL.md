@@ -27,7 +27,7 @@ Store durable **product/design** decisions, MCP telemetry, and (via the gate) re
 | Role | Responsibility |
 |------|----------------|
 | **manager** (readonly) | Read decisions before plan/dispatch/resume. Skim tasks.md for this run / open needs-decision — **never paste the whole log or archive**. Never edit logs. Dispatch `documenter` for decision and batched MCP usage appends only. |
-| **documenter** | Append decisions / mcp-usage when briefed. Do **not** own tasks.md (hook writes it). |
+| **documenter** | Append decisions / mcp-usage when briefed, via `scripts/append-memory.mjs`. Do **not** own tasks.md (hook writes it). |
 | Other workers | Do not write logs unless briefed. Report `mcpUsed` in JSON so manager can batch. Optional `usage.totalTokens` (count only) when the host exposes it. |
 | **gate hook** | On validated worker report: append tasks.md + rich `report` run-event (incl. `tokens` count or null). |
 
@@ -43,6 +43,17 @@ Filter by **Applies to** / titles. Paste anchors into `Related agent-memory`. De
 ## When to write decisions
 
 Append **one entry** when a decision is settled (user answered, or reversible default flagged). Prefer `Supersedes` over editing.
+
+### How to append
+
+Use the script — it owns the shape, you own what is worth recording:
+
+```bash
+echo '<json>' | node scripts/append-memory.mjs decisions
+echo '<json>' | node scripts/append-memory.mjs mcp
+```
+
+`decisions` needs `title, task, status, decision, options, why, appliesTo` (optional `workerIds`, `supersedes`); `mcp` needs `server, tool, task, outcome, why` (optional `workerIds`). It refuses to write and names every missing field, so a rejection is a fix-and-rerun, not a reason to hand-write the block. Never pass secrets, tokens, PII, or response bodies.
 
 ### Entry format (decisions)
 

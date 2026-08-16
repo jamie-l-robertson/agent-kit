@@ -58,7 +58,9 @@
       "Bash(node scripts/validate-worker-report.mjs:*)",
       "Bash(node scripts/check-agent-kit.mjs:*)",
       "Bash(node scripts/sync-tool-adapters.mjs:*)",
-      "Bash(node scripts/sync-project-skills.mjs:*)"
+      "Bash(node scripts/sync-project-skills.mjs:*)",
+      "Bash(node scripts/append-memory.mjs:*)",
+      "Bash(node scripts/format-final-report.mjs:*)"
     ],
     "deny": [
       "Read(./.env)",

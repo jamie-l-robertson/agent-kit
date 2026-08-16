@@ -288,6 +288,78 @@ export function isDocumentWritablePath(p) {
 }
 
 /** Schema agent.enum must match PROJECT_AGENTS (sorted). */
+/**
+ * Read the brief-hygiene fields the manager's bounce rules key off.
+ * Free text in, best effort out — a field we cannot find is simply absent,
+ * which makes the check below skip rather than guess.
+ * @param {string} text
+ */
+export function parseBrief(text) {
+  const field = (label) =>
+    String(text || '')
+      .match(new RegExp(`^${label}:\\s*(.*)$`, 'im'))?.[1]
+      ?.trim() || ''
+  return {
+    mode: field('Mode'),
+    humanApprove: field('Human approve'),
+    approvedAction: field('Approved destructive action'),
+    mcpPrewarmed: field('MCP prewarmed'),
+    writablePaths: field('Writable paths'),
+  }
+}
+
+const NONE = new Set(['', 'none', 'n/a', 'na'])
+
+/**
+ * Manager bounce rules that become checkable once the brief is in hand.
+ *
+ * Advisory and soft by design: no brief, no opinion. These are warnings for the
+ * manager, never schema errors — the hook must not block a worker over context
+ * it was not given.
+ *
+ * ponytail: no Writable-paths globbing. Matching `changed` against a glob needs
+ * a matcher and gets noisy on partial paths; scope drift is already a
+ * response-sanity read. Add it if drift actually shows up in practice.
+ *
+ * @param {Record<string, unknown>} report
+ * @param {{ brief?: string, agentsMd?: string, requiredMcp?: string }} [context]
+ * @returns {string[]} warnings
+ */
+export function checkAgainstBrief(report, context = {}) {
+  const warnings = []
+  const r = report || {}
+  const brief = context.brief ? parseBrief(context.brief) : null
+
+  if (brief) {
+    if (
+      String(r.humanApprove) === 'granted' &&
+      brief.humanApprove &&
+      brief.humanApprove !== 'granted'
+    ) {
+      warnings.push(
+        `Report claims humanApprove: granted but the brief says "Human approve: ${brief.humanApprove}" — a worker cannot grant its own destructive approval. Bounce.`,
+      )
+    }
+    if (brief.mode && r.mode && brief.mode !== r.mode) {
+      warnings.push(
+        `Brief set Mode: ${brief.mode} but the report claims mode: ${r.mode} — a worker must not escalate its own Mode. Bounce.`,
+      )
+    }
+  }
+
+  const requiredMcp = context.requiredMcp || brief?.mcpPrewarmed || ''
+  if (!NONE.has(requiredMcp.toLowerCase())) {
+    const used = String(r.mcpUsed ?? '').trim()
+    if (NONE.has(used.toLowerCase())) {
+      warnings.push(
+        `MCP was required (${requiredMcp}) but mcpUsed is "${used || 'missing'}" — either the work skipped it or the report is not honest. Bounce, or accept blocked naming the server.`,
+      )
+    }
+  }
+
+  return warnings
+}
+
 export function schemaAgentEnum() {
   const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))
   return schema.properties?.agent?.enum || []
@@ -301,7 +373,9 @@ async function main() {
     raw = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8')
   }
   if (!raw) {
-    console.error('Usage: validate-worker-report.mjs \'<json>\' | --stdin')
+    console.error(
+      "Usage: validate-worker-report.mjs '<json>' | --stdin [--brief <file>] [--required-mcp <ids>]",
+    )
     process.exit(2)
   }
   let report
@@ -319,6 +393,26 @@ async function main() {
   if (!result.ok) {
     console.error(result.errors.join('\n'))
     process.exit(1)
+  }
+
+  // Schema-valid. Brief context, when supplied, adds manager bounce warnings —
+  // advisory only, so a clean schema still exits 0.
+  const briefIdx = process.argv.indexOf('--brief')
+  const mcpIdx = process.argv.indexOf('--required-mcp')
+  const context = {}
+  if (briefIdx > -1 && process.argv[briefIdx + 1]) {
+    try {
+      context.brief = readFileSync(process.argv[briefIdx + 1], 'utf8')
+    } catch {
+      console.error(`(could not read brief ${process.argv[briefIdx + 1]} — skipping brief checks)`)
+    }
+  }
+  if (mcpIdx > -1) context.requiredMcp = process.argv[mcpIdx + 1] || ''
+
+  const warnings = checkAgainstBrief(report, context)
+  if (warnings.length) {
+    console.error(`ok (schema) — but:\n- ${warnings.join('\n- ')}`)
+    process.exit(0)
   }
   console.log('ok')
 }
