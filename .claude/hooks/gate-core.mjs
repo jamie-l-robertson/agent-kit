@@ -26,7 +26,26 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-export const DEFAULT_STATE_PATH = join(__dirname, 'state', 'agent-roles.json')
+
+/**
+ * Project root for kit state + memory.
+ *
+ * ponytail: CLAUDE_PROJECT_DIR is set by the host when it runs the hook, so this
+ * is a no-op today — `__dirname` is already `<project>/.claude/hooks`. It matters
+ * if the hooks ever live outside the project (plugin install, vendored copy,
+ * symlink): without it every project's memory would land in one shared directory.
+ */
+export function projectRoot() {
+  return process.env.CLAUDE_PROJECT_DIR || join(__dirname, '..', '..')
+}
+
+export const DEFAULT_STATE_PATH = join(
+  projectRoot(),
+  '.claude',
+  'hooks',
+  'state',
+  'agent-roles.json',
+)
 
 /** Resolved each call so tests can set AGENT_KIT_STATE_PATH before load/save. */
 export function getStatePath() {
@@ -211,8 +230,7 @@ export function getRunEventsPath(date = new Date()) {
   if (process.env.AGENT_KIT_STATE_PATH) {
     return join(dirname(getStatePath()), 'runs', `${day}.jsonl`)
   }
-  // .claude/hooks/state → .claude/memory/runs
-  return join(__dirname, '..', 'memory', 'runs', `${day}.jsonl`)
+  return join(projectRoot(), '.claude', 'memory', 'runs', `${day}.jsonl`)
 }
 
 /** Append one run event to the local JSONL (best-effort, never throws). */

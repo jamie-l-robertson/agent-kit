@@ -20,10 +20,7 @@
 
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const MEMORY_DIR = join(__dirname, '..', '.claude', 'memory')
+import { projectRoot } from '../.claude/hooks/gate-core.mjs'
 
 export const DECISIONS_HEADER = `# Agent decisions log
 
@@ -52,7 +49,7 @@ const REQUIRED = {
 }
 
 export function logPathFor(kind, root) {
-  const dir = root ? join(root, '.claude', 'memory') : MEMORY_DIR
+  const dir = join(root || projectRoot(), '.claude', 'memory')
   return join(dir, kind === 'mcp' ? 'mcp-usage.md' : 'decisions.md')
 }
 

@@ -11,9 +11,12 @@ import {
   appendFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { projectRoot } from './gate-core.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+/** Default memory dir: `<project>/.claude/memory` (see projectRoot). */
+function memoryDir() {
+  return join(projectRoot(), '.claude', 'memory')
+}
 
 export const TASKS_LIVE_CAP = 50
 
@@ -27,10 +30,10 @@ Append-only. Written by the call-graph gate on valid worker reports (SubagentSto
 
 `
 
-/** @param {string} [root] project root; default = kit root (.. from hooks) */
+/** @param {string} [root] memory dir override; default = <project>/.claude/memory */
 export function getTasksMemoryPath(root) {
   if (process.env.AGENT_KIT_TASKS_PATH) return process.env.AGENT_KIT_TASKS_PATH
-  const base = root || join(__dirname, '..', 'memory')
+  const base = root || memoryDir()
   return join(base, 'tasks.md')
 }
 
@@ -39,7 +42,7 @@ export function getTasksArchiveDir(root) {
   if (process.env.AGENT_KIT_TASKS_ARCHIVE_DIR) {
     return process.env.AGENT_KIT_TASKS_ARCHIVE_DIR
   }
-  const base = root || join(__dirname, '..', 'memory')
+  const base = root || memoryDir()
   return join(base, 'tasks-archive')
 }
 
