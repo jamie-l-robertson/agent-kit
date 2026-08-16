@@ -21,13 +21,22 @@ import {
   decide,
   resolveEffectiveCaller,
   rememberRole,
-  normalizeCursorPayload,
   normalizeClaudePayload,
   MANAGER,
   PROJECT_AGENTS,
   FALLBACK_SESSION,
   lockPath,
-} from '../.agents/hooks/gate-core.mjs'
+  setPlanPending,
+  readPlanApproval,
+  approvePlan,
+  planGateEnabled,
+  PLAN_SUMMARY_MAX,
+  detectTrackerBypass,
+  setGate,
+  clearGate,
+  readGates,
+  MAX_GATE_ROUNDS,
+} from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 let tmpStateDir = ''
@@ -59,27 +68,34 @@ test('getStatePath honors AGENT_KIT_STATE_PATH', () => {
 
 test('root may spawn manager', () => {
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 's1',
     conversationId: 's1',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
   })
   const d = decide({
-    event: 'preToolUse',
+    event: 'PreToolUse',
     target: MANAGER,
-    conversationId: 'root-1',
-    parentConversationId: '',
-    subagentId: 'mgr-1',
+    conversationId: 's1',
+    subagentId: '',
     sessionId: 's1',
     callerAgentType: '',
     callerAgentId: '',
-    recordChild: true,
   })
   assert.equal(d.action, 'allow')
+  // Roles land on SubagentStart, not on the spawn request.
+  decide({
+    event: 'SubagentStart',
+    target: MANAGER,
+    conversationId: 's1',
+    subagentId: 'mgr-1',
+    sessionId: 's1',
+    callerAgentType: MANAGER,
+    callerAgentId: 'mgr-1',
+  })
   assert.equal(rolesOf('s1')['mgr-1'], MANAGER)
 })
 
@@ -88,17 +104,24 @@ test('manager may spawn worker', () => {
   rememberRole(state, 'mgr-1', MANAGER, 's1')
   saveState(state)
   const d = decide({
-    event: 'preToolUse',
+    event: 'PreToolUse',
     target: 'frontend',
-    conversationId: 'c',
-    parentConversationId: 'mgr-1',
-    subagentId: 'fe-1',
+    conversationId: 's1',
+    subagentId: '',
     sessionId: 's1',
     callerAgentType: '',
-    callerAgentId: '',
-    recordChild: true,
+    callerAgentId: 'mgr-1',
   })
   assert.equal(d.action, 'allow')
+  decide({
+    event: 'SubagentStart',
+    target: 'frontend',
+    conversationId: 's1',
+    subagentId: 'fe-1',
+    sessionId: 's1',
+    callerAgentType: 'frontend',
+    callerAgentId: 'fe-1',
+  })
   assert.equal(rolesOf('s1')['fe-1'], 'frontend')
 })
 
@@ -107,15 +130,13 @@ test('worker cannot spawn worker', () => {
   rememberRole(state, 'fe-1', 'frontend', 's1')
   saveState(state)
   const d = decide({
-    event: 'preToolUse',
+    event: 'PreToolUse',
     target: 'backend',
-    conversationId: 'c',
-    parentConversationId: 'fe-1',
-    subagentId: 'be-1',
+    conversationId: 's1',
+    subagentId: '',
     sessionId: 's1',
     callerAgentType: '',
-    callerAgentId: '',
-    recordChild: true,
+    callerAgentId: 'fe-1',
   })
   assert.equal(d.action, 'deny')
   assert.match(d.message, /status: blocked/)
@@ -126,15 +147,13 @@ test('unknown parent id fails closed when role map is non-empty', () => {
   rememberRole(state, 'root-sess', 'root', 's1')
   saveState(state)
   const d = decide({
-    event: 'preToolUse',
+    event: 'PreToolUse',
     target: 'frontend',
-    conversationId: 'c',
-    parentConversationId: 'ghost-parent',
-    subagentId: 'fe-x',
+    conversationId: 's1',
+    subagentId: '',
     sessionId: 's1',
     callerAgentType: '',
-    callerAgentId: '',
-    recordChild: true,
+    callerAgentId: 'ghost-parent',
   })
   assert.equal(d.action, 'deny')
   assert.match(d.message, /unknown/i)
@@ -142,15 +161,13 @@ test('unknown parent id fails closed when role map is non-empty', () => {
 
 test('unmapped parent with empty map fails closed (no root invent)', () => {
   const d = decide({
-    event: 'preToolUse',
+    event: 'PreToolUse',
     target: MANAGER,
-    conversationId: 'c',
-    parentConversationId: 'ghost-parent',
-    subagentId: 'mgr-x',
+    conversationId: 's1',
+    subagentId: '',
     sessionId: 's1',
     callerAgentType: '',
-    callerAgentId: '',
-    recordChild: true,
+    callerAgentId: 'ghost-parent',
   })
   assert.equal(d.action, 'deny')
   assert.match(d.message, /unknown/i)
@@ -161,7 +178,6 @@ test('resolveEffectiveCaller: empty parent is root (main agent)', () => {
     resolveEffectiveCaller(emptyState(), {
       callerAgentType: '',
       callerAgentId: '',
-      parentConversationId: '',
       conversationId: 'sess',
       sessionId: 'sess',
     }),
@@ -176,7 +192,6 @@ test('resolveEffectiveCaller: sessionId mapped to root allows', () => {
     resolveEffectiveCaller(state, {
       callerAgentType: '',
       callerAgentId: '',
-      parentConversationId: '',
       conversationId: 'other',
       sessionId: 'sess',
     }),
@@ -184,66 +199,17 @@ test('resolveEffectiveCaller: sessionId mapped to root allows', () => {
   )
 })
 
-test('conversationId worker alias beats sessionId root (no parent nest deny)', () => {
-  const sid = 'prec-root'
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: sid,
-      conversation_id: sid,
-    }),
-  )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      parent_conversation_id: sid,
-      subagent_id: 'fe-1',
-      subagent_type: 'frontend',
-    }),
-  )
-  assert.equal(rolesOf(sid)['fe-conv'], 'frontend')
-  assert.equal(
-    resolveEffectiveCaller(loadState(), {
-      callerAgentType: '',
-      callerAgentId: '',
-      parentConversationId: '',
-      conversationId: 'fe-conv',
-      sessionId: sid,
-    }),
-    'frontend',
-  )
-  const denyWorkerConv = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      parent_conversation_id: '',
-      subagent_id: 'be-2',
-      tool_input: { subagent_type: 'backend' },
-    }),
-  )
-  assert.equal(denyWorkerConv.action, 'deny')
-})
-
 test('main-agent spawn with session root conversation still allows', () => {
   const sid = 'main-root'
   decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: sid,
-      conversation_id: sid,
-    }),
+    normalizeClaudePayload({ hook_event_name: 'SessionStart', session_id: sid }),
   )
   const allow = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
+    normalizeClaudePayload({
+      hook_event_name: 'SubagentStart',
       session_id: sid,
-      conversation_id: sid,
-      parent_conversation_id: '',
-      subagent_id: 'mgr-1',
-      subagent_type: 'manager',
+      agent_id: 'mgr-1',
+      agent_type: 'manager',
     }),
   )
   assert.equal(allow.action, 'noop')
@@ -258,7 +224,6 @@ test('SubagentStop clears role', () => {
     event: 'SubagentStop',
     subagentId: 'fe-1',
     conversationId: '',
-    parentConversationId: '',
     sessionId: 's1',
     target: 'frontend',
     callerAgentType: '',
@@ -267,39 +232,21 @@ test('SubagentStop clears role', () => {
   assert.equal(rolesOf('s1')['fe-1'], undefined)
 })
 
-test('subagentStop camelCase clears role via tool_call_id when no subagent_id', () => {
-  const state = emptyState()
-  rememberRole(state, 'tc-99', 'frontend', 's1')
-  saveState(state)
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStop',
-      session_id: 's1',
-      conversation_id: 'fe-conv',
-      tool_call_id: 'tc-99',
-      subagent_type: 'frontend',
-    }),
-  )
-  assert.equal(rolesOf('s1')['tc-99'], undefined)
-})
-
 test('sessionStart seeds root; sessionEnd wipes that session only', () => {
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 'sess-a',
     conversationId: 'sess-a',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
   })
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 'sess-b',
     conversationId: 'sess-b',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
@@ -314,11 +261,10 @@ test('sessionStart seeds root; sessionEnd wipes that session only', () => {
   assert.equal(rolesOf('sess-b')['mgr-2'], MANAGER)
 
   decide({
-    event: 'sessionEnd',
+    event: 'SessionEnd',
     sessionId: 'sess-a',
     conversationId: 'sess-a',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
@@ -328,55 +274,56 @@ test('sessionStart seeds root; sessionEnd wipes that session only', () => {
 })
 
 test('two sessions stay isolated for nest deny', () => {
+  for (const sid of ['A', 'B']) {
+    decide(
+      normalizeClaudePayload({ hook_event_name: 'SessionStart', session_id: sid }),
+    )
+  }
   decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
+    normalizeClaudePayload({
+      hook_event_name: 'SubagentStart',
       session_id: 'A',
-      conversation_id: 'A',
+      agent_id: 'fe-a',
+      agent_type: 'frontend',
     }),
   )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: 'B',
-      conversation_id: 'B',
-    }),
-  )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: 'A',
-      conversation_id: 'fe-a',
-      parent_conversation_id: 'A',
-      subagent_id: 'fe-a',
-      subagent_type: 'frontend',
-    }),
-  )
-  // Session B still records root→manager on start (noop)
   const startB = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
+    normalizeClaudePayload({
+      hook_event_name: 'SubagentStart',
       session_id: 'B',
-      conversation_id: 'mgr-b',
-      parent_conversation_id: 'B',
-      subagent_id: 'mgr-b',
-      subagent_type: 'manager',
+      agent_id: 'mgr-b',
+      agent_type: 'manager',
     }),
   )
   assert.equal(startB.action, 'noop')
   assert.equal(rolesOf('B')['mgr-b'], MANAGER)
-  // Session A worker cannot nest on preToolUse
+
+  // A's worker cannot nest...
   const denyA = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
+    normalizeClaudePayload({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Agent',
       session_id: 'A',
-      conversation_id: 'fe-a',
-      parent_conversation_id: 'fe-a',
-      tool_call_id: 'be-a',
+      agent_id: 'fe-a',
+      agent_type: 'frontend',
       tool_input: { subagent_type: 'backend' },
     }),
   )
   assert.equal(denyA.action, 'deny')
+
+  // ...and that must not leak into B, where the same id means nothing.
+  const allowB = decide(
+    normalizeClaudePayload({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Agent',
+      session_id: 'B',
+      agent_id: 'mgr-b',
+      agent_type: 'manager',
+      tool_input: { subagent_type: 'backend' },
+    }),
+  )
+  assert.equal(allowB.action, 'allow')
+  assert.equal(rolesOf('A')['mgr-b'], undefined)
 })
 
 test('corrupt state file loads as empty', () => {
@@ -384,92 +331,6 @@ test('corrupt state file loads as empty', () => {
   writeFileSync(getStatePath(), '{not-json', 'utf8')
   const s = loadState()
   assert.deepEqual(s.sessions, {})
-})
-
-test('Cursor fixture: root → manager → worker → deny nest; stop clears; conv aliases', () => {
-  const sid = 'root-conv'
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      conversation_id: sid,
-      session_id: sid,
-    }),
-  )
-  assert.equal(rolesOf(sid)[sid], 'root')
-
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'mgr-conv',
-      parent_conversation_id: sid,
-      subagent_id: 'mgr-1',
-      subagent_type: 'manager',
-    }),
-  )
-  assert.equal(rolesOf(sid)['mgr-1'], MANAGER)
-  assert.equal(rolesOf(sid)['mgr-conv'], MANAGER)
-
-  const allowFe = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'mgr-conv',
-      parent_conversation_id: 'mgr-1',
-      subagent_id: 'fe-1',
-      tool_input: { subagent_type: 'frontend' },
-    }),
-  )
-  assert.equal(allowFe.action, 'allow')
-
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      parent_conversation_id: 'mgr-conv',
-      subagent_id: 'fe-1',
-      subagent_type: 'frontend',
-    }),
-  )
-  assert.equal(rolesOf(sid)['fe-1'], 'frontend')
-  assert.equal(rolesOf(sid)['fe-conv'], 'frontend')
-
-  const denyNest = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      parent_conversation_id: 'fe-1',
-      subagent_id: 'be-1',
-      tool_input: { subagent_type: 'backend' },
-    }),
-  )
-  assert.equal(denyNest.action, 'deny')
-
-  // Cursor subagentStart is record-only (gateOnStart false); nest deny is preToolUse.
-  const startNest = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'be-conv',
-      parent_conversation_id: 'fe-1',
-      subagent_id: 'be-1',
-      subagent_type: 'backend',
-    }),
-  )
-  assert.equal(startNest.action, 'noop')
-
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStop',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      subagent_id: 'fe-1',
-      subagent_type: 'frontend',
-    }),
-  )
-  assert.equal(rolesOf(sid)['fe-1'], undefined)
 })
 
 test('Claude fixture: root → manager → frontend allow; nest deny; stop clears; session wipe', () => {
@@ -560,11 +421,10 @@ test('tests do not touch DEFAULT_STATE_PATH', () => {
     ? readFileSync(DEFAULT_STATE_PATH, 'utf8')
     : null
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 'tmp-only',
     conversationId: 'tmp-only',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
@@ -575,8 +435,8 @@ test('tests do not touch DEFAULT_STATE_PATH', () => {
   assert.equal(after, before)
 })
 
-test('Copilot synced agents include nesting forbid + worker-report markers', () => {
-  const agentsDir = join(root, '.github', 'agents')
+test('Claude synced agents include nesting forbid + worker-report markers', () => {
+  const agentsDir = join(root, '.claude', 'agents')
   for (const name of PROJECT_AGENTS) {
     if (name === MANAGER) continue
     const body = readFileSync(join(agentsDir, `${name}.md`), 'utf8')
@@ -593,78 +453,36 @@ test('Copilot synced agents include nesting forbid + worker-report markers', () 
   assert.match(mgr, /implement done requires verificationResult pass|pass\+evidence|non-empty `evidence`/i)
 })
 
-test('resolveSessionId finds session via parent when session_id omitted', () => {
+test('resolveSessionId finds the session via the caller when session_id is omitted', () => {
   decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: 'S1',
-      conversation_id: 'S1',
-    }),
+    normalizeClaudePayload({ hook_event_name: 'SessionStart', session_id: 'S1' }),
   )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: 'S1',
-      conversation_id: 'mgr-conv',
-      parent_conversation_id: 'S1',
-      subagent_id: 'mgr-1',
-      subagent_type: 'manager',
-    }),
-  )
-  // No session_id — resolve via parent mgr-1; start is record-only noop
-  const start = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      conversation_id: 'fe-conv',
-      parent_conversation_id: 'mgr-1',
-      subagent_id: 'fe-1',
-      subagent_type: 'frontend',
-    }),
-  )
-  assert.equal(start.action, 'noop')
-  assert.equal(rolesOf('S1')['fe-1'], 'frontend')
-  assert.equal(loadState().sessions[FALLBACK_SESSION], undefined)
-})
+  const state = loadState()
+  rememberRole(state, 'mgr-1', MANAGER, 'S1')
+  saveState(state)
 
-test('conversation alias allows parent_conversation_id = mgr-conv', () => {
-  const sid = 'alias-root'
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: sid,
-      conversation_id: sid,
-    }),
-  )
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'mgr-conv',
-      parent_conversation_id: sid,
-      subagent_id: 'mgr-1',
-      subagent_type: 'manager',
-    }),
-  )
-  const allow = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'fe-conv',
-      parent_conversation_id: 'mgr-conv',
-      subagent_id: 'fe-1',
-      tool_input: { subagent_type: 'frontend' },
-    }),
-  )
-  assert.equal(allow.action, 'allow')
+  // No sessionId on the payload — resolve via the caller id, and do not
+  // invent a _default bucket.
+  const d = decide({
+    event: 'SubagentStart',
+    sessionId: '',
+    conversationId: '',
+    subagentId: 'mgr-1',
+    target: MANAGER,
+    callerAgentType: MANAGER,
+    callerAgentId: 'mgr-1',
+  })
+  assert.equal(d.action, 'noop')
+  assert.equal(rolesOf('S1')['mgr-1'], MANAGER)
+  assert.equal(loadState().sessions[FALLBACK_SESSION], undefined)
 })
 
 test('concurrent decide calls do not corrupt state JSON', async () => {
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 'conc',
     conversationId: 'conc',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
@@ -674,15 +492,13 @@ test('concurrent decide calls do not corrupt state JSON', async () => {
     jobs.push(
       Promise.resolve().then(() =>
         decide({
-          event: 'subagentStart',
+          event: 'SubagentStart',
           sessionId: 'conc',
           conversationId: `c-${i}`,
-          parentConversationId: 'conc',
           subagentId: `w-${i}`,
           target: 'frontend',
           callerAgentType: '',
           callerAgentId: '',
-          gateOnStart: true,
         }),
       ),
     )
@@ -706,11 +522,10 @@ test('withStateLock fail-closed on timeout (no steal)', () => {
     assert.throws(
       () =>
         decide({
-          event: 'sessionStart',
+          event: 'SessionStart',
           sessionId: 'lock-t',
           conversationId: 'lock-t',
           subagentId: '',
-          parentConversationId: '',
           target: '',
           callerAgentType: '',
           callerAgentId: '',
@@ -725,30 +540,27 @@ test('withStateLock fail-closed on timeout (no steal)', () => {
 test('multiprocess decide under shared lock does not corrupt JSON', async () => {
   const statePath = process.env.AGENT_KIT_STATE_PATH
   decide({
-    event: 'sessionStart',
+    event: 'SessionStart',
     sessionId: 'mp',
     conversationId: 'mp',
     subagentId: '',
-    parentConversationId: '',
     target: '',
     callerAgentType: '',
     callerAgentId: '',
   })
   const worker = `
-import { decide } from ${JSON.stringify(join(root, '.agents/hooks/gate-core.mjs'))};
+import { decide } from ${JSON.stringify(join(root, '.claude/hooks/gate-core.mjs'))};
 process.env.AGENT_KIT_STATE_PATH = ${JSON.stringify(statePath)};
 process.env.AGENT_KIT_RUN_EVENTS = '0';
 const i = process.argv[2];
 decide({
-  event: 'subagentStart',
+  event: 'SubagentStart',
   sessionId: 'mp',
   conversationId: 'c-' + i,
-  parentConversationId: 'mp',
   subagentId: 'w-' + i,
   target: 'frontend',
   callerAgentType: '',
   callerAgentId: '',
-  gateOnStart: true,
 });
 `
   const scriptPath = join(tmpStateDir, 'mp-worker.mjs')
@@ -790,16 +602,15 @@ test('nest deny appends run event when enabled', () => {
   rememberRole(st, 'ev', 'root', 'ev')
   rememberRole(st, 'fe-1', 'frontend', 'ev')
   saveState(st)
+  // The nest gate lives on PreToolUse; SubagentStart is record-only.
   const d = decide({
-    event: 'subagentStart',
+    event: 'PreToolUse',
     sessionId: 'ev',
-    conversationId: 'c',
-    parentConversationId: 'fe-1',
-    subagentId: 'be-1',
+    conversationId: 'ev',
+    subagentId: '',
     target: 'backend',
     callerAgentType: '',
-    callerAgentId: '',
-    gateOnStart: true,
+    callerAgentId: 'fe-1',
   })
   assert.equal(d.action, 'deny')
   const lines = readFileSync(process.env.AGENT_KIT_RUN_EVENTS_PATH, 'utf8')
@@ -810,103 +621,119 @@ test('nest deny appends run event when enabled', () => {
   assert.equal(last.agent, 'backend')
 })
 
-test('spawn with no session identity on subagentStart with gateOnStart still nests by role only', () => {
-  // With gateOnStart true and no ids: resolveEffectiveCaller → root → allow.
-  const d = decide({
-    event: 'subagentStart',
-    sessionId: '',
-    conversationId: '',
-    parentConversationId: '',
-    subagentId: 'x',
-    target: 'frontend',
+test('planApproval + planSummary survive a subsequent saveState', () => {
+  setPlanPending('s1', 'ship the thing')
+  // Any later hook event does load → mutate → save; the flag must not be dropped.
+  const state = loadState()
+  rememberRole(state, 'fe-1', 'frontend', 's1')
+  saveState(state)
+  assert.deepEqual(readPlanApproval('s1'), {
+    planApproval: 'pending',
+    planSummary: 'ship the thing',
+  })
+})
+
+test('planSummary is capped, not widened', () => {
+  setPlanPending('s1', 'x'.repeat(PLAN_SUMMARY_MAX + 200))
+  assert.equal(readPlanApproval('s1').planSummary.length, PLAN_SUMMARY_MAX)
+})
+
+test('approvePlan flips pending → approved and is idempotent', () => {
+  setPlanPending('s1', 'plan')
+  approvePlan('s1')
+  assert.equal(readPlanApproval('s1').planApproval, 'approved')
+  approvePlan('s1')
+  assert.equal(readPlanApproval('s1').planApproval, 'approved')
+})
+
+test('approvePlan on a session with no pending plan stays undefined', () => {
+  approvePlan('s-none')
+  assert.equal(readPlanApproval('s-none').planApproval, undefined)
+})
+
+test('planGateEnabled honors AGENT_KIT_PLAN_GATE=off', () => {
+  assert.equal(planGateEnabled(), true)
+  process.env.AGENT_KIT_PLAN_GATE = 'off'
+  assert.equal(planGateEnabled(), false)
+  delete process.env.AGENT_KIT_PLAN_GATE
+})
+
+// --- access integrity (Phase 2) ---
+
+test('detectTrackerBypass catches gh issue/api and tracker fetches', () => {
+  for (const cmd of [
+    'gh issue view 42',
+    'gh api repos/o/r/issues/1',
+    'cd /tmp && gh   issue list',
+    'curl -s https://api.github.com/repos/o/r/issues/1',
+    'wget https://acme.atlassian.net/rest/api/3/issue/ABC-1',
+    'curl https://api.linear.app/graphql -d @q.json',
+    'curl -H auth https://api.notion.com/v1/pages/x',
+  ]) {
+    assert.ok(detectTrackerBypass(cmd), `should flag: ${cmd}`)
+  }
+})
+
+test('detectTrackerBypass leaves ordinary commands alone', () => {
+  for (const cmd of [
+    'gh pr create --fill',
+    'gh run watch',
+    'npm test',
+    'curl -s http://localhost:3000/api/health',
+    'git log --oneline -5',
+    'echo api.github.com',
+  ]) {
+    assert.equal(detectTrackerBypass(cmd), '', `should allow: ${cmd}`)
+  }
+})
+
+// --- audit fix-loop gates (Phase 3) ---
+
+test('gates survive a subsequent saveState', () => {
+  setGate('s1', 'review', 'frontend')
+  const state = loadState()
+  rememberRole(state, 'fe-1', 'frontend', 's1')
+  saveState(state)
+  assert.deepEqual(readGates('s1'), { review: { rounds: 1, owner: 'frontend' } })
+})
+
+test('setGate counts rounds so a loop cannot run forever', () => {
+  setGate('s1', 'review', 'frontend')
+  setGate('s1', 'review', 'backend')
+  assert.deepEqual(readGates('s1').review, { rounds: 2, owner: 'backend' })
+})
+
+test('gates are independent and clear independently', () => {
+  setGate('s1', 'review', 'frontend')
+  setGate('s1', 'test', 'backend')
+  setGate('s1', 'secRisk', 'backend')
+  assert.deepEqual(Object.keys(readGates('s1')).sort(), ['review', 'secRisk', 'test'])
+  clearGate('s1', 'test')
+  assert.deepEqual(Object.keys(readGates('s1')).sort(), ['review', 'secRisk'])
+  assert.equal(readGates('s1').test, undefined)
+})
+
+test('clearGate on an unset gate is a no-op, not a crash', () => {
+  clearGate('s-none', 'review')
+  assert.deepEqual(readGates('s-none'), {})
+})
+
+test('a gate past the round cap is reported, not silently dropped', () => {
+  for (let i = 0; i <= MAX_GATE_ROUNDS; i++) setGate('s1', 'review', 'frontend')
+  const g = readGates('s1').review
+  assert.ok(g.rounds > MAX_GATE_ROUNDS, 'the count keeps climbing')
+})
+
+test('sessionEnd wipes gates with the session', () => {
+  setGate('s-end', 'review', 'frontend')
+  decide({
+    event: 'SessionEnd',
+    sessionId: 's-end',
+    conversationId: 's-end',
+    subagentId: '',
+    target: '',
     callerAgentType: '',
     callerAgentId: '',
-    gateOnStart: true,
   })
-  assert.equal(d.action, 'allow')
-})
-
-test('Cursor lean subagentStart is noop (gateOnStart false); does not deny', () => {
-  const lean = normalizeCursorPayload({
-    hook_event_name: 'subagentStart',
-    subagent_id: 'mgr-1',
-    subagent_type: 'manager',
-  })
-  assert.equal(lean.gateOnStart, false)
-  const d = decide(lean)
-  assert.equal(d.action, 'noop')
-})
-
-test('Cursor lean preToolUse allows as root (noon semantics)', () => {
-  const d = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      tool_call_id: 'tc-lean',
-      tool_input: { subagent_type: 'manager' },
-    }),
-  )
-  assert.equal(d.action, 'allow')
-})
-
-test('Cursor root→manager and manager→worker allow on preToolUse; worker nest denies', () => {
-  const sid = 'reg-root'
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'sessionStart',
-      session_id: sid,
-      conversation_id: sid,
-    }),
-  )
-  const mgr = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: sid,
-      tool_call_id: 'mgr-tc',
-      tool_input: { subagent_type: 'manager' },
-    }),
-  )
-  assert.equal(mgr.action, 'allow')
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'mgr-c',
-      parent_conversation_id: sid,
-      subagent_id: 'mgr-tc',
-      subagent_type: 'manager',
-    }),
-  )
-  const fe = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'mgr-c',
-      parent_conversation_id: 'mgr-tc',
-      tool_call_id: 'fe-tc',
-      tool_input: { subagent_type: 'frontend' },
-    }),
-  )
-  assert.equal(fe.action, 'allow')
-  decide(
-    normalizeCursorPayload({
-      hook_event_name: 'subagentStart',
-      session_id: sid,
-      conversation_id: 'fe-c',
-      parent_conversation_id: 'mgr-c',
-      subagent_id: 'fe-tc',
-      subagent_type: 'frontend',
-    }),
-  )
-  const nest = decide(
-    normalizeCursorPayload({
-      hook_event_name: 'preToolUse',
-      session_id: sid,
-      conversation_id: 'fe-c',
-      parent_conversation_id: 'fe-tc',
-      tool_call_id: 'be-tc',
-      tool_input: { subagent_type: 'backend' },
-    }),
-  )
-  assert.equal(nest.action, 'deny')
+  assert.deepEqual(readGates('s-end'), {})
 })

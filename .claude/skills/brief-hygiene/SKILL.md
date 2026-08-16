@@ -19,7 +19,7 @@ After a **planner** run: do **not** dispatch implementers until planner-flagged 
 ```
 Task: <imperative goal>
 Mode: audit-only | implement | verify-only | document
-Model: <from .agents/agents/<name>.md, or inherit>
+Model: <from .claude/agents/<name>.md, or inherit>
 Success: <checkable outcomes>
 Scope: <paths>
 Writable paths: <optional>
@@ -40,7 +40,7 @@ Constraints: <…>
 Report format: JSON worker-report fence (canonical) + short prose summary
 ```
 
-Planner Source briefs may add `Sources:` (see planner). Never brief `security` / `risk` with `Mode: implement`.
+Planner Source briefs may add `Sources:` (see planner). Never brief `security` / `risk` / `researcher` with `Mode: implement`.
 
 ## Required checklist
 
@@ -48,7 +48,7 @@ Planner Source briefs may add `Sources:` (see planner). Never brief `security` /
 Brief hygiene:
 - [ ] Task + Success checkable (behavior, command, or artifact)
 - [ ] Mode set (never omit; never assume implement)
-- [ ] Model set (from .agents/agents/<name>.md, default inherit)
+- [ ] Model set (from .claude/agents/<name>.md, default inherit)
 - [ ] Human approve: granted | n/a (required on every implement brief; granted for destructive)
 - [ ] Scope / Out of scope / Constraints concrete
 - [ ] Decisions already made + Related agent-memory: pasted anchors/titles or explicit none
@@ -69,8 +69,8 @@ Brief hygiene:
 |-------|------|
 | `Task` / `Success` | Imperative goal; Success must be checkable. |
 | `Mode` | Never omit. Never assume `implement`. |
-| `Model` | Canonical `model:` from `.agents/agents/<name>.md` — put in the **brief text**. On Cursor, do **not** pass `model: inherit` as a Task tool argument (omit Task `model` so the host inherits the parent). |
-| `Human approve` | `n/a` for non-destructive; `granted` required before destructive work. Definition: `.agents/protocols/human-approve.md`. |
+| `Model` | Canonical `model:` from `.claude/agents/<name>.md` — put in the **brief text**. |
+| `Human approve` | `n/a` for non-destructive; `granted` required before destructive work. Definition: `.claude/protocols/human-approve.md`. |
 | `Approved destructive action` | When `Human approve: granted`, name the exact action/env/resource (not a blanket grant). |
 | `Decisions already made` | Settled choices for this task (or `none`). |
 | `Related agent-memory` | Always set on planner, implementer, reviewer. Explicit `none` = do not re-scan. |
@@ -85,10 +85,10 @@ Brief hygiene:
 - Re-summarizing a planner brief into a thinner one
 - Omitting memory because “the worker can read the log”
 - Omitting Human approve on implement briefs
-- Briefing `security` / `risk` with `Mode: implement`
+- Briefing `security` / `risk` / `researcher` with `Mode: implement`
+- Dispatching an implementer on facts nobody sourced — send `researcher` first when the brief rests on unknown numbers, dates, or external detail
 - Instructing URL fetch via curl, `gh`, WebFetch, or browser
 - Dispatching MCP-dependent work when Required MCP failed prewarm
 - Dispatching implementers from a planner plan before user gap answers / plan approval
 - Dispatching `frontend` implement while planner UI design gaps (missing, misaligned, or understanding unclear/mismatch) are still open
-- Using Cursor Plan mode / `CreatePlan` for manager plan approval (blocks post-approval implementer dispatch; stay in Agent mode and present in chat)
-- Passing Task tool `model: "inherit"` on Cursor (often rejected → worker Stopped / Waiting for subagent); omit Task `model` instead
+- Presenting a home-grown plan for approval instead of planner output (or instead of fast-path)

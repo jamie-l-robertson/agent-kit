@@ -1,6 +1,6 @@
 /**
  * Dependency-free validator for worker-report JSON fences.
- * Mirrors .agents/schemas/worker-report.schema.json bounce-critical rules.
+ * Mirrors .claude/schemas/worker-report.schema.json bounce-critical rules.
  * Usage: node scripts/validate-worker-report.mjs '<json>' | --stdin
  */
 
@@ -8,13 +8,13 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // fileURLToPath used for isMain
-import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
+import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SCHEMA_PATH = join(
   __dirname,
   '..',
-  '.agents',
+  '.claude',
   'schemas',
   'worker-report.schema.json',
 )
@@ -24,15 +24,19 @@ const MODE = new Set(['audit-only', 'implement', 'verify-only', 'document'])
 const HUMAN = new Set(['required', 'granted', 'n/a'])
 const VERIFY = new Set(['pass', 'fail', 'n/a'])
 const AUDIT_FINDINGS_AGENTS = new Set(['reviewer', 'security', 'risk'])
+const SEVERITY = new Set(['none', 'warning', 'critical'])
 /** Agents that must report audit-only + empty changed on done */
 const READONLY_DONE_AGENTS = new Set([
   'security',
   'risk',
   'reviewer',
   'planner',
+  'researcher',
   'manager',
 ])
-const AUDIT_ONLY_AGENTS = new Set(['security', 'risk'])
+const AUDIT_ONLY_AGENTS = new Set(['security', 'risk', 'researcher'])
+/** Agents whose deliverable is unusable without citations */
+const CITING_AGENTS = new Set(['researcher'])
 
 /** Schema required keys — kept in sync with worker-report.schema.json */
 export const SCHEMA_REQUIRED = [
@@ -151,13 +155,37 @@ export function validateWorkerReport(report) {
     }
   }
 
+  if (report.findingsSeverity != null && !SEVERITY.has(report.findingsSeverity)) {
+    errors.push(
+      `invalid findingsSeverity: ${report.findingsSeverity} (use ${[...SEVERITY].join(' | ')})`,
+    )
+  }
+
+  // Typed severity, not prose. The fix-loop gate keys off this field, and
+  // grepping "Critical" out of free text is exactly the semantic guessing the
+  // kit keeps advisory everywhere else.
   if (
     report.status === 'done' &&
     report.mode === 'audit-only' &&
     AUDIT_FINDINGS_AGENTS.has(report.agent)
   ) {
-    if (typeof report.findings !== 'string' || !report.findings.trim()) {
-      errors.push('findings must be a non-empty string for audit-only done')
+    const severity = report.findingsSeverity
+    const hasFindings =
+      typeof report.findings === 'string' && report.findings.trim() !== ''
+    if (severity == null) {
+      errors.push(
+        'findingsSeverity is required for audit-only done (none | warning | critical)',
+      )
+    } else if (severity === 'none') {
+      if (hasFindings) {
+        errors.push(
+          'findingsSeverity: none contradicts non-empty findings — raise the severity or clear the findings',
+        )
+      }
+    } else if (!hasFindings) {
+      errors.push(
+        `findings must be a non-empty string when findingsSeverity is ${severity}`,
+      )
     }
   }
 
@@ -176,6 +204,34 @@ export function validateWorkerReport(report) {
     }
     if (Array.isArray(report.changed) && report.changed.length > 0) {
       errors.push(`${report.agent} done reports must have changed: []`)
+    }
+  }
+
+  // Uncited research is not research — every claim must be traceable.
+  if (report.sources != null) {
+    if (!Array.isArray(report.sources)) {
+      errors.push('sources must be an array of {title, url|ref, accessed?}')
+    } else {
+      report.sources.forEach((s, i) => {
+        if (!s || typeof s !== 'object' || Array.isArray(s)) {
+          errors.push(`sources[${i}] must be an object`)
+          return
+        }
+        if (typeof s.title !== 'string' || !s.title.trim()) {
+          errors.push(`sources[${i}] requires a non-empty title`)
+        }
+        const locator = s.url ?? s.ref
+        if (typeof locator !== 'string' || !locator.trim()) {
+          errors.push(`sources[${i}] requires a non-empty url or ref`)
+        }
+      })
+    }
+  }
+  if (CITING_AGENTS.has(report.agent) && report.status === 'done') {
+    if (!Array.isArray(report.sources) || report.sources.length === 0) {
+      errors.push(
+        `${report.agent} done requires non-empty sources (cite every claim; use status blocked when nothing citable was found)`,
+      )
     }
   }
 
@@ -251,12 +307,84 @@ export function isDocumentWritablePath(p) {
   if (typeof p !== 'string' || !p.trim()) return false
   if (p === 'AGENTS.md' || p === 'CLAUDE.md' || p === 'README.md') return true
   if (p.startsWith('docs/')) return true
-  if (p.startsWith('.agents/memory/')) return true
-  if (p.startsWith('.agents/') && p.endsWith('.md')) return true
+  if (p.startsWith('.claude/memory/')) return true
+  if (p.startsWith('.claude/') && p.endsWith('.md')) return true
   return false
 }
 
 /** Schema agent.enum must match PROJECT_AGENTS (sorted). */
+/**
+ * Read the brief-hygiene fields the manager's bounce rules key off.
+ * Free text in, best effort out — a field we cannot find is simply absent,
+ * which makes the check below skip rather than guess.
+ * @param {string} text
+ */
+export function parseBrief(text) {
+  const field = (label) =>
+    String(text || '')
+      .match(new RegExp(`^${label}:\\s*(.*)$`, 'im'))?.[1]
+      ?.trim() || ''
+  return {
+    mode: field('Mode'),
+    humanApprove: field('Human approve'),
+    approvedAction: field('Approved destructive action'),
+    mcpPrewarmed: field('MCP prewarmed'),
+    writablePaths: field('Writable paths'),
+  }
+}
+
+const NONE = new Set(['', 'none', 'n/a', 'na'])
+
+/**
+ * Manager bounce rules that become checkable once the brief is in hand.
+ *
+ * Advisory and soft by design: no brief, no opinion. These are warnings for the
+ * manager, never schema errors — the hook must not block a worker over context
+ * it was not given.
+ *
+ * ponytail: no Writable-paths globbing. Matching `changed` against a glob needs
+ * a matcher and gets noisy on partial paths; scope drift is already a
+ * response-sanity read. Add it if drift actually shows up in practice.
+ *
+ * @param {Record<string, unknown>} report
+ * @param {{ brief?: string, agentsMd?: string, requiredMcp?: string }} [context]
+ * @returns {string[]} warnings
+ */
+export function checkAgainstBrief(report, context = {}) {
+  const warnings = []
+  const r = report || {}
+  const brief = context.brief ? parseBrief(context.brief) : null
+
+  if (brief) {
+    if (
+      String(r.humanApprove) === 'granted' &&
+      brief.humanApprove &&
+      brief.humanApprove !== 'granted'
+    ) {
+      warnings.push(
+        `Report claims humanApprove: granted but the brief says "Human approve: ${brief.humanApprove}" — a worker cannot grant its own destructive approval. Bounce.`,
+      )
+    }
+    if (brief.mode && r.mode && brief.mode !== r.mode) {
+      warnings.push(
+        `Brief set Mode: ${brief.mode} but the report claims mode: ${r.mode} — a worker must not escalate its own Mode. Bounce.`,
+      )
+    }
+  }
+
+  const requiredMcp = context.requiredMcp || brief?.mcpPrewarmed || ''
+  if (!NONE.has(requiredMcp.toLowerCase())) {
+    const used = String(r.mcpUsed ?? '').trim()
+    if (NONE.has(used.toLowerCase())) {
+      warnings.push(
+        `MCP was required (${requiredMcp}) but mcpUsed is "${used || 'missing'}" — either the work skipped it or the report is not honest. Bounce, or accept blocked naming the server.`,
+      )
+    }
+  }
+
+  return warnings
+}
+
 export function schemaAgentEnum() {
   const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))
   return schema.properties?.agent?.enum || []
@@ -270,7 +398,9 @@ async function main() {
     raw = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8')
   }
   if (!raw) {
-    console.error('Usage: validate-worker-report.mjs \'<json>\' | --stdin')
+    console.error(
+      "Usage: validate-worker-report.mjs '<json>' | --stdin [--brief <file>] [--required-mcp <ids>]",
+    )
     process.exit(2)
   }
   let report
@@ -288,6 +418,26 @@ async function main() {
   if (!result.ok) {
     console.error(result.errors.join('\n'))
     process.exit(1)
+  }
+
+  // Schema-valid. Brief context, when supplied, adds manager bounce warnings —
+  // advisory only, so a clean schema still exits 0.
+  const briefIdx = process.argv.indexOf('--brief')
+  const mcpIdx = process.argv.indexOf('--required-mcp')
+  const context = {}
+  if (briefIdx > -1 && process.argv[briefIdx + 1]) {
+    try {
+      context.brief = readFileSync(process.argv[briefIdx + 1], 'utf8')
+    } catch {
+      console.error(`(could not read brief ${process.argv[briefIdx + 1]} — skipping brief checks)`)
+    }
+  }
+  if (mcpIdx > -1) context.requiredMcp = process.argv[mcpIdx + 1] || ''
+
+  const warnings = checkAgainstBrief(report, context)
+  if (warnings.length) {
+    console.error(`ok (schema) — but:\n- ${warnings.join('\n- ')}`)
+    process.exit(0)
   }
   console.log('ok')
 }

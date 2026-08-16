@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/worker-report.schema.json",
+  "title": "WorkerReport",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "status",
+    "agent",
+    "mode",
+    "goal",
+    "changed",
+    "recommendNext",
+    "humanApprove",
+    "verificationResult"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["done", "needs-decision", "blocked", "out-of-scope"]
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "manager",
+        "planner",
+        "frontend",
+        "backend",
+        "tester",
+        "documenter",
+        "researcher",
+        "reviewer",
+        "security",
+        "devops",
+        "infrastructure",
+        "risk"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "description": "Citations backing every claim. Required non-empty for researcher done.",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "ref": { "type": "string", "minLength": 1 },
+          "accessed": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "anyOf": [{ "required": ["url"] }, { "required": ["ref"] }]
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["audit-only", "implement", "verify-only", "document"]
+    },
+    "goal": { "type": "string", "minLength": 1 },
+    "changed": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommendNext": { "type": "string" },
+    "findings": { "type": ["string", "null"] },
+    "findingsSeverity": {
+      "type": "string",
+      "description": "Typed trigger for the audit fix-loop. reviewer/security/risk must set it on done; none means nothing to fix.",
+      "enum": ["none", "warning", "critical"]
+    },
+    "evidence": { "type": ["string", "null"] },
+    "mcpUsed": { "type": ["string", "null"] },
+    "tests": { "type": ["string", "null"] },
+    "shipped": { "type": ["string", "null"] },
+    "deferred": { "type": ["string", "null"] },
+    "notes": { "type": ["string", "null"] },
+    "needs": { "type": ["string", "null"] },
+    "humanApprove": {
+      "type": "string",
+      "enum": ["required", "granted", "n/a"]
+    },
+    "verificationResult": {
+      "type": "string",
+      "enum": ["pass", "fail", "n/a"]
+    },
+    "approvedAction": { "type": ["string", "null"] },
+    "agentId": { "type": ["string", "null"] },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": { "type": ["number", "null"] },
+        "outputTokens": { "type": ["number", "null"] },
+        "totalTokens": { "type": ["number", "null"] },
+        "costUsd": { "type": ["number", "null"] },
+        "source": {
+          "type": "string",
+          "enum": ["host", "estimate", "n/a"]
+        }
+      },
+      "required": ["source"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "humanApprove": { "const": "required" }
+        },
+        "required": ["status", "humanApprove"]
+      },
+      "then": { "not": {} }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "mode": { "const": "audit-only" },
+          "agent": { "enum": ["reviewer", "security", "risk"] }
+        },
+        "required": ["status", "mode", "agent"]
+      },
+      "then": {
+        "required": ["findingsSeverity"],
+        "allOf": [
+          {
+            "if": {
+              "properties": { "findingsSeverity": { "const": "none" } },
+              "required": ["findingsSeverity"]
+            },
+            "then": {
+              "properties": { "findings": { "maxLength": 0 } }
+            },
+            "else": {
+              "required": ["findings"],
+              "properties": {
+                "findings": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "agent": { "const": "planner" }
+        },
+        "required": ["status", "agent"]
+      },
+      "then": {
+        "properties": {
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": { "enum": ["security", "risk"] },
+          "status": { "const": "done" }
+        },
+        "required": ["agent", "status"]
+      },
+      "then": {
+        "properties": {
+          "mode": { "const": "audit-only" },
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "out-of-scope" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "recommendNext": { "type": "string", "minLength": 1, "not": { "const": "none" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "needs-decision" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["needs"],
+        "properties": {
+          "needs": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "done" },
+          "mode": { "const": "implement" }
+        },
+        "required": ["status", "mode"]
+      },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "verificationResult": { "const": "pass" },
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verificationResult": { "enum": ["pass", "fail"] }
+        },
+        "required": ["verificationResult"]
+      },
+      "then": {
+        "required": ["evidence"],
+        "properties": {
+          "evidence": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "blocked" }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": ["needs"],
+            "properties": {
+              "needs": { "type": "string", "minLength": 1 }
+            }
+          },
+          {
+            "required": ["evidence"],
+            "properties": {
+              "evidence": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "humanApprove": { "const": "granted" }
+        },
+        "required": ["humanApprove"]
+      },
+      "then": {
+        "required": ["approvedAction"],
+        "properties": {
+          "approvedAction": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "agent": {
+            "enum": ["security", "risk", "reviewer", "planner", "manager"]
+          },
+          "status": { "const": "done" }
+        },
+        "required": ["agent", "status"]
+      },
+      "then": {
+        "properties": {
+          "mode": { "const": "audit-only" },
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "verify-only" }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "changed": { "type": "array", "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": { "const": "document" }
+        },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "changed": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(AGENTS\\.md|CLAUDE\\.md|README\\.md|docs/.+|\\.claude/.+\\.md)$"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

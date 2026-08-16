@@ -1,6 +1,8 @@
 # Agent kit — ignore hook runtime state
-.agents/hooks/state/
-.agents/memory/runs/
-.tmp-install-*/
+.claude/hooks/state/
+.claude/memory/runs/
+.tmp-*install*/
 .tmp-skills-inv-*/
-.cursor/hooks/state/
+
+# Local, per-machine settings (plugin toggles etc) — never ship with the kit
+.claude/settings.local.json

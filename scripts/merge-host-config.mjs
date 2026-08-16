@@ -1,91 +1,41 @@
 /**
- * Merge kit Cursor/Claude hook configs into a project root without wiping
- * foreign entries. Shared by install and sync-tool-adapters.
+ * Merge kit Claude settings into a project root without wiping foreign entries.
+ * Shared by install and sync-tool-adapters.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-export const CURSOR_GATE = 'node .agents/hooks/adapters/cursor.mjs'
-export const CLAUDE_GATE = 'node .agents/hooks/adapters/claude.mjs'
+/** ${CLAUDE_PROJECT_DIR} — hook cwd is not guaranteed (Desktop, subdir sessions). */
+export const CLAUDE_GATE =
+  'node "${CLAUDE_PROJECT_DIR}/.claude/hooks/adapters/claude.mjs"'
 
-export function mergeHookEntries(existingList, kitEntries, sameFn) {
-  const list = Array.isArray(existingList) ? [...existingList] : []
-  for (const kit of kitEntries) {
-    const idx = list.findIndex((e) => sameFn(e, kit))
-    if (idx >= 0) list[idx] = { ...list[idx], ...kit }
-    else list.push(kit)
-  }
-  return list
-}
+/** Any prior spelling of the kit gate command (relative path, unquoted, …). */
+const LEGACY_GATE_RE = /adapters[/\\]claude\.mjs/
 
 /**
- * @param {string} root project root
- * @param {{ failOnInvalidJson?: boolean }} [opts]
+ * SubagentStop fires for every agent type — scope the report gate to kit names.
+ * Literal (not derived from gate-core) so the installer can run standalone;
+ * merge-host-config.test.mjs asserts it stays in sync with PROJECT_AGENTS.
  */
-export function mergeCursorHooks(root, { failOnInvalidJson = true } = {}) {
-  const path = join(root, '.cursor', 'hooks.json')
-  const kitHooks = {
-    sessionStart: [{ command: CURSOR_GATE }],
-    sessionEnd: [{ command: CURSOR_GATE }],
-    subagentStart: [{ command: CURSOR_GATE, failClosed: false }],
-    subagentStop: [{ command: CURSOR_GATE }],
-    preToolUse: [
-      { command: CURSOR_GATE, matcher: 'Task', failClosed: true },
-    ],
-  }
+export const KIT_AGENT_MATCHER =
+  'backend|devops|documenter|frontend|infrastructure|manager|planner|researcher|reviewer|risk|security|tester'
 
-  let doc = { version: 1, hooks: {} }
-  if (existsSync(path)) {
-    try {
-      doc = JSON.parse(readFileSync(path, 'utf8'))
-      if (!doc || typeof doc !== 'object') doc = { version: 1, hooks: {} }
-      if (!doc.hooks || typeof doc.hooks !== 'object') doc.hooks = {}
-    } catch (err) {
-      if (failOnInvalidJson) {
-        throw new Error(
-          `Invalid JSON in ${path}: ${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
-      doc = { version: 1, hooks: {} }
-    }
-  }
-  if (doc.version == null) doc.version = 1
+/** Kit scripts the manager/workers run constantly; allowlisted to cut prompts. */
+export const KIT_PERMISSIONS = [
+  'Bash(node scripts/validate-worker-report.mjs:*)',
+  'Bash(node scripts/check-agent-kit.mjs:*)',
+  'Bash(node scripts/sync-tool-adapters.mjs:*)',
+  'Bash(node scripts/sync-project-skills.mjs:*)',
+  'Bash(node scripts/append-memory.mjs:*)',
+  'Bash(node scripts/format-final-report.mjs:*)',
+]
 
-  const sameCmd = (a, b) => a?.command === b?.command
-  const samePre = (a, b) =>
-    a?.command === b?.command && a?.matcher === b?.matcher
+/** Agent|Task = call-graph gate; Bash = tracker-bypass deny (access integrity). */
+export const PRETOOL_MATCHER = 'Agent|Task|Bash'
 
-  doc.hooks.sessionStart = mergeHookEntries(
-    doc.hooks.sessionStart,
-    kitHooks.sessionStart,
-    sameCmd,
-  )
-  doc.hooks.sessionEnd = mergeHookEntries(
-    doc.hooks.sessionEnd,
-    kitHooks.sessionEnd,
-    sameCmd,
-  )
-  doc.hooks.subagentStart = mergeHookEntries(
-    doc.hooks.subagentStart,
-    kitHooks.subagentStart,
-    sameCmd,
-  )
-  doc.hooks.subagentStop = mergeHookEntries(
-    doc.hooks.subagentStop,
-    kitHooks.subagentStop,
-    sameCmd,
-  )
-  doc.hooks.preToolUse = mergeHookEntries(
-    doc.hooks.preToolUse,
-    kitHooks.preToolUse,
-    samePre,
-  )
-
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, `${JSON.stringify(doc, null, 2)}\n`, 'utf8')
-  return doc
-}
+/** Secrets stay out of agent context — names and refs only. */
+export const KIT_DENY = ['Read(./.env)', 'Read(./.env.*)']
 
 /**
  * @param {string} root project root
@@ -111,39 +61,60 @@ export function mergeClaudeSettings(root, { failOnInvalidJson = true } = {}) {
 
   /**
    * Merge kit command into matcher entry without dropping sibling foreign hooks.
+   * Any legacy spelling of the kit command is swept first so upgrades replace
+   * rather than duplicate (a duplicate gate fires the hook twice per event).
    */
   const mergeByCommand = (arr, matcher, command) => {
-    const list = Array.isArray(arr) ? [...arr] : []
+    const list = (Array.isArray(arr) ? arr : [])
+      .map((e) => {
+        const inner = Array.isArray(e?.hooks) ? e.hooks : []
+        const kept = inner.filter(
+          (h) => !LEGACY_GATE_RE.test(String(h?.command || '')),
+        )
+        return kept.length === inner.length ? e : { ...e, hooks: kept }
+      })
+      .filter((e) => (Array.isArray(e?.hooks) ? e.hooks.length > 0 : true))
+
+    const kitHook = { type: 'command', command }
     const idx = list.findIndex((e) =>
       matcher ? e?.matcher === matcher : !e?.matcher,
     )
-    const kitHook = { type: 'command', command }
     if (idx < 0) {
-      list.push(
-        matcher
-          ? { matcher, hooks: [kitHook] }
-          : { hooks: [kitHook] },
-      )
+      list.push(matcher ? { matcher, hooks: [kitHook] } : { hooks: [kitHook] })
       return list
     }
     const entry = { ...list[idx] }
-    const inner = Array.isArray(entry.hooks) ? [...entry.hooks] : []
-    const hIdx = inner.findIndex((h) => h?.command === command)
-    if (hIdx >= 0) inner[hIdx] = { ...inner[hIdx], ...kitHook }
-    else inner.push(kitHook)
-    entry.hooks = inner
+    entry.hooks = [...(Array.isArray(entry.hooks) ? entry.hooks : []), kitHook]
     if (matcher) entry.matcher = matcher
     list[idx] = entry
     return list
   }
 
   hooks.SessionStart = mergeByCommand(hooks.SessionStart, null, CLAUDE_GATE)
-  hooks.PreToolUse = mergeByCommand(hooks.PreToolUse, 'Agent|Task', CLAUDE_GATE)
+  hooks.PreToolUse = mergeByCommand(hooks.PreToolUse, PRETOOL_MATCHER, CLAUDE_GATE)
   hooks.SubagentStart = mergeByCommand(hooks.SubagentStart, null, CLAUDE_GATE)
-  hooks.SubagentStop = mergeByCommand(hooks.SubagentStop, null, CLAUDE_GATE)
+  hooks.SubagentStop = mergeByCommand(
+    hooks.SubagentStop,
+    KIT_AGENT_MATCHER,
+    CLAUDE_GATE,
+  )
   hooks.SessionEnd = mergeByCommand(hooks.SessionEnd, null, CLAUDE_GATE)
 
+  const permissions = { ...(existing.permissions || {}) }
+  const allow = Array.isArray(permissions.allow) ? [...permissions.allow] : []
+  for (const rule of KIT_PERMISSIONS) {
+    if (!allow.includes(rule)) allow.push(rule)
+  }
+  permissions.allow = allow
+
+  const deny = Array.isArray(permissions.deny) ? [...permissions.deny] : []
+  for (const rule of KIT_DENY) {
+    if (!deny.includes(rule)) deny.push(rule)
+  }
+  permissions.deny = deny
+
   existing.hooks = hooks
+  existing.permissions = permissions
   mkdirSync(dirname(settingsPath), { recursive: true })
   writeFileSync(settingsPath, `${JSON.stringify(existing, null, 2)}\n`, 'utf8')
   return existing

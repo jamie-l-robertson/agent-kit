@@ -7,7 +7,7 @@ import {
   loadSchemaRequired,
   schemaAgentEnum,
 } from './validate-worker-report.mjs'
-import { PROJECT_AGENTS } from '../.agents/hooks/gate-core.mjs'
+import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
 const valid = {
   status: 'done',
@@ -64,7 +64,8 @@ test('reviewer audit-only done requires findings', () => {
       agent: 'reviewer',
       mode: 'audit-only',
       changed: [],
-      findings: 'none',
+      findings: 'one nit',
+      findingsSeverity: 'warning',
       verificationResult: 'n/a',
     }).ok,
     true,
@@ -187,6 +188,7 @@ test('security done must be audit-only with empty changed', () => {
       mode: 'audit-only',
       changed: [],
       findings: 'crit',
+      findingsSeverity: 'critical',
       verificationResult: 'n/a',
     }).ok,
     true,
@@ -265,7 +267,7 @@ test('extractWorkerReportJson finds last matching fence', () => {
   const text = `
 Status: done
 \`\`\`json
-{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none","humanApprove":"n/a","findings":"none","verificationResult":"n/a"}
+{"status":"done","agent":"reviewer","mode":"audit-only","goal":"Review","changed":[],"recommendNext":"none","humanApprove":"n/a","findings":"","findingsSeverity":"none","verificationResult":"n/a"}
 \`\`\`
 `
   const report = extractWorkerReportJson(text)
@@ -313,10 +315,132 @@ test('document rejects product paths in changed', () => {
       ...valid,
       agent: 'documenter',
       mode: 'document',
-      changed: ['.agents/memory/decisions.md', 'docs/agent-kit/notes.md'],
+      changed: ['.claude/memory/decisions.md', 'docs/agent-kit/notes.md'],
       verificationResult: 'n/a',
       evidence: null,
     }).ok,
     true,
   )
+})
+
+const research = {
+  status: 'done',
+  agent: 'researcher',
+  mode: 'audit-only',
+  goal: 'source the 2026 stats',
+  changed: [],
+  recommendNext: 'none',
+  humanApprove: 'n/a',
+  verificationResult: 'n/a',
+  findings: 'Adoption sat at 41% in Q1 [S1].',
+  sources: [{ title: 'Vendor report 2026', url: 'https://example.com/r' }],
+}
+
+test('researcher done requires non-empty sources', () => {
+  assert.equal(validateWorkerReport(research).ok, true)
+  const noSources = { ...research }
+  delete noSources.sources
+  assert.equal(validateWorkerReport(noSources).ok, false)
+  assert.equal(validateWorkerReport({ ...research, sources: [] }).ok, false)
+})
+
+test('researcher is readonly and never implements', () => {
+  assert.equal(
+    validateWorkerReport({
+      ...research,
+      mode: 'implement',
+      changed: ['src/a.ts'],
+      verificationResult: 'pass',
+      evidence: 'x',
+    }).ok,
+    false,
+  )
+})
+
+test('sources entries need a title and a url or ref', () => {
+  const bad = (sources) => validateWorkerReport({ ...research, sources }).ok
+  assert.equal(bad([{ url: 'https://example.com' }]), false, 'title required')
+  assert.equal(bad([{ title: 'No locator' }]), false, 'url or ref required')
+  assert.equal(bad([{ title: 'Repo', ref: '.claude/memory/decisions.md' }]), true)
+  assert.equal(bad(['just a string']), false)
+  assert.equal(bad('not an array'), false)
+})
+
+test('a blocked researcher run needs no sources', () => {
+  const blocked = {
+    ...research,
+    status: 'blocked',
+    needs: 'no primary source found for the 2026 threshold',
+  }
+  delete blocked.sources
+  assert.equal(validateWorkerReport(blocked).ok, true)
+})
+
+// --- findingsSeverity (Phase 3) ---
+
+const audit = (over = {}) => ({
+  status: 'done',
+  agent: 'reviewer',
+  mode: 'audit-only',
+  goal: 'review the pager',
+  changed: [],
+  recommendNext: 'none',
+  humanApprove: 'n/a',
+  verificationResult: 'n/a',
+  findings: 'one nit in the pager',
+  findingsSeverity: 'warning',
+  ...over,
+})
+
+test('auditor done requires findingsSeverity — prose is not a trigger', () => {
+  for (const agent of ['reviewer', 'security', 'risk']) {
+    const { findingsSeverity, ...without } = audit({ agent })
+    const r = validateWorkerReport(without)
+    assert.equal(r.ok, false, `${agent} must declare severity`)
+    assert.ok(r.errors.some((e) => /findingsSeverity/.test(e)))
+    assert.equal(validateWorkerReport(audit({ agent })).ok, true)
+  }
+})
+
+test('findingsSeverity is a closed enum', () => {
+  const r = validateWorkerReport(audit({ findingsSeverity: 'Critical!' }))
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /findingsSeverity/.test(e)))
+  for (const sev of ['warning', 'critical']) {
+    assert.equal(validateWorkerReport(audit({ findingsSeverity: sev })).ok, true)
+  }
+  assert.equal(
+    validateWorkerReport(audit({ findingsSeverity: 'none', findings: '' })).ok,
+    true,
+  )
+})
+
+test('severity none must not carry findings, and findings must carry severity', () => {
+  assert.equal(
+    validateWorkerReport(audit({ findingsSeverity: 'none', findings: 'actually there is a bug' })).ok,
+    false,
+    'none contradicts non-empty findings',
+  )
+  assert.equal(
+    validateWorkerReport(audit({ findingsSeverity: 'none', findings: '' })).ok,
+    true,
+  )
+})
+
+test('non-auditors are not asked for a severity', () => {
+  assert.equal(validateWorkerReport(valid).ok, true)
+  assert.equal(
+    validateWorkerReport({ ...valid, findingsSeverity: 'critical' }).ok,
+    true,
+    'but may volunteer one',
+  )
+})
+
+test('a blocked auditor owes no severity', () => {
+  const { findingsSeverity, ...without } = audit({
+    status: 'blocked',
+    needs: 'repo access',
+    findings: '',
+  })
+  assert.equal(validateWorkerReport(without).ok, true)
 })

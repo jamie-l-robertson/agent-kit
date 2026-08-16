@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Inventory kit vs project-owned skills; update AGENTS.md Skills line and
- * `.agents/memory/skills-inventory.md`. Non-destructive (never deletes skill dirs).
+ * `.claude/memory/skills-inventory.md`. Non-destructive (never deletes skill dirs).
  *
  *   node scripts/sync-project-skills.mjs
  *   node scripts/sync-project-skills.mjs --check
@@ -31,16 +31,11 @@ function resolveRoot(argv = process.argv) {
 
 const ROOT = resolveRoot()
 
-const SKILL_ROOTS = [
-  '.agents/skills',
-  '.cursor/skills',
-  '.claude/skills',
-  '.github/skills',
-]
+const SKILL_ROOTS = ['.claude/skills']
 
 export const KNOWN_KIT_SKILL_NAMES = KIT_SKILLS
 
-const INVENTORY_PATH = join(ROOT, '.agents', 'memory', 'skills-inventory.md')
+const INVENTORY_PATH = join(ROOT, '.claude', 'memory', 'skills-inventory.md')
 const AGENTS_MD = join(ROOT, 'AGENTS.md')
 
 function read(p) {
@@ -59,8 +54,8 @@ function listDirs(abs) {
 }
 
 export function listCanonicalKitSkillNames(root = ROOT) {
-  const dir = join(root, '.agents', 'skills')
-  // Ownership = kit-skill-names manifest ∩ dirs present (not “every .agents/skills folder”)
+  const dir = join(root, '.claude', 'skills')
+  // Ownership = kit-skill-names manifest ∩ dirs present under .claude/skills
   return new Set(listDirs(dir).filter((n) => KNOWN_KIT_SKILL_NAMES.has(n)))
 }
 
@@ -103,7 +98,7 @@ export function scanSkills(root = ROOT) {
         byName.set(skillName, next)
         continue
       }
-      // Prefer earlier roots (.agents/skills first); keep kit owner if either is kit
+      // Prefer earlier roots; keep kit owner if either is kit
       const prevRoot = prev.path.split('/').slice(0, 2).join('/')
       const nextRoot = pathRel.split('/').slice(0, 2).join('/')
       const preferNext =
@@ -165,7 +160,7 @@ export function renderAgentsSkillsLine(skills) {
   const projectList = project.length
     ? project.map((n) => `\`${n}\``).join(', ')
     : 'none'
-  return `- **Skills**: kit — ${kitList}; project — ${projectList}. Inventory: \`.agents/memory/skills-inventory.md\`. Agent bodies compose \`.agents/protocols/\` at sync.`
+  return `- **Skills**: kit — ${kitList}; project — ${projectList}. Inventory: \`.claude/memory/skills-inventory.md\`.`
 }
 
 /** @param {string} agentsMd @param {string} skillsLine */
@@ -177,7 +172,9 @@ export function patchAgentsSkillsLine(agentsMd, skillsLine) {
   if (/^## Stack\s*$/m.test(agentsMd)) {
     return agentsMd.replace(/^## Stack\s*$/m, `## Stack\n\n${skillsLine}`)
   }
-  return `${skillsLine}\n\n${agentsMd}`
+  // No anchor: a project-owned AGENTS.md. Leave it alone rather than guessing a
+  // position — `--check` reports the missing line and **setup** offers the block.
+  return agentsMd
 }
 
 export function buildOutputs(root = ROOT) {
@@ -195,7 +192,7 @@ export function buildOutputs(root = ROOT) {
  */
 export function applyProjectSkillsSync(root = ROOT) {
   const agentsMdPath = join(root, 'AGENTS.md')
-  const inventoryPath = join(root, '.agents', 'memory', 'skills-inventory.md')
+  const inventoryPath = join(root, '.claude', 'memory', 'skills-inventory.md')
   if (!existsSync(agentsMdPath)) {
     throw new Error('AGENTS.md not found')
   }
@@ -205,17 +202,21 @@ export function applyProjectSkillsSync(root = ROOT) {
     inventoryPath,
     inventory.endsWith('\n') ? inventory : `${inventory}\n`,
   )
-  const next = patchAgentsSkillsLine(read(agentsMdPath), skillsLine)
-  writeFileSync(agentsMdPath, next.endsWith('\n') ? next : `${next}\n`)
+  const prev = read(agentsMdPath)
+  const next = patchAgentsSkillsLine(prev, skillsLine)
+  const agentsMdSkipped = next === prev && !next.includes(skillsLine)
+  if (!agentsMdSkipped) {
+    writeFileSync(agentsMdPath, next.endsWith('\n') ? next : `${next}\n`)
+  }
   const kitCount = skills.filter((s) => s.owner === 'kit').length
   const projectCount = skills.filter((s) => s.owner === 'project').length
-  return { kitCount, projectCount }
+  return { kitCount, projectCount, agentsMdSkipped }
 }
 
 function main() {
   const check = process.argv.includes('--check')
   const root = resolveRoot()
-  const inventoryPath = join(root, '.agents', 'memory', 'skills-inventory.md')
+  const inventoryPath = join(root, '.claude', 'memory', 'skills-inventory.md')
   const agentsMdPath = join(root, 'AGENTS.md')
   const { skills, inventory, skillsLine } = buildOutputs(root)
   const kitCount = skills.filter((s) => s.owner === 'kit').length
@@ -224,9 +225,9 @@ function main() {
   if (check) {
     const mismatches = []
     if (!existsSync(inventoryPath)) {
-      mismatches.push('missing .agents/memory/skills-inventory.md')
+      mismatches.push('missing .claude/memory/skills-inventory.md')
     } else if (read(inventoryPath) !== (inventory.endsWith('\n') ? inventory : `${inventory}\n`)) {
-      mismatches.push('drift .agents/memory/skills-inventory.md')
+      mismatches.push('drift .claude/memory/skills-inventory.md')
     }
     if (!existsSync(agentsMdPath)) {
       mismatches.push('missing AGENTS.md')
@@ -248,9 +249,17 @@ function main() {
   }
 
   const result = applyProjectSkillsSync(root)
+  const targets = result.agentsMdSkipped
+    ? '.claude/memory/skills-inventory.md'
+    : 'AGENTS.md + .claude/memory/skills-inventory.md'
   console.log(
-    `Synced project skills inventory (kit=${result.kitCount}, project=${result.projectCount}) → AGENTS.md + .agents/memory/skills-inventory.md`,
+    `Synced project skills inventory (kit=${result.kitCount}, project=${result.projectCount}) → ${targets}`,
   )
+  if (result.agentsMdSkipped) {
+    console.log(
+      'Left project-owned AGENTS.md untouched (no `## Stack` anchor) — run **setup** to add the Skills line.',
+    )
+  }
 }
 
 const isMain =

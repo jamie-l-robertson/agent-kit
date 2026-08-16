@@ -1,0 +1,667 @@
+/**
+ * Call-graph gate core (tool-agnostic).
+ *
+ * - root (user / main agent) may spawn manager + workers + built-ins
+ * - manager may spawn workers + built-ins
+ * - workers may not spawn any subagents (including each other)
+ *
+ * State: .claude/hooks/state/agent-roles.json (gitignored), or AGENT_KIT_STATE_PATH.
+ * Shape: { sessions: { [sessionId]: { roles: { [agentId]: role } } } }
+ *
+ * The adapter normalizes stdin payloads into a common shape and maps decisions
+ * back to Claude hook JSON.
+ */
+
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  appendFileSync,
+  statSync,
+  rmSync,
+  renameSync,
+} from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+export const DEFAULT_STATE_PATH = join(__dirname, 'state', 'agent-roles.json')
+
+/** Resolved each call so tests can set AGENT_KIT_STATE_PATH before load/save. */
+export function getStatePath() {
+  return process.env.AGENT_KIT_STATE_PATH || DEFAULT_STATE_PATH
+}
+
+/** Default on-disk path (ignore AGENT_KIT_STATE_PATH). Prefer getStatePath(). */
+export const STATE_PATH = DEFAULT_STATE_PATH
+
+export const MANAGER = 'manager'
+export const WORKERS = new Set([
+  'planner',
+  'researcher',
+  'frontend',
+  'backend',
+  'tester',
+  'documenter',
+  'reviewer',
+  'security',
+  'devops',
+  'infrastructure',
+  'risk',
+])
+export const PROJECT_AGENTS = new Set([MANAGER, ...WORKERS])
+
+const ROOT_ROLE = 'root'
+export const FALLBACK_SESSION = '_default'
+
+const DEFAULT_LOCK_TIMEOUT_MS = 2000
+const LOCK_RETRY_MS = 15
+
+export function lockTimeoutMs() {
+  const raw = process.env.AGENT_KIT_LOCK_TIMEOUT_MS
+  if (raw == null || raw === '') return DEFAULT_LOCK_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_LOCK_TIMEOUT_MS
+}
+
+export function emptyState() {
+  return { sessions: {} }
+}
+
+function migrateRaw(raw) {
+  if (raw?.sessions && typeof raw.sessions === 'object') {
+    return { sessions: raw.sessions }
+  }
+  if (raw?.roles && typeof raw.roles === 'object') {
+    return { sessions: { [FALLBACK_SESSION]: { roles: { ...raw.roles } } } }
+  }
+  return emptyState()
+}
+
+/**
+ * Plan-gate keys, preserved through every load/save.
+ * The bucket is rebuilt key-by-key on both sides, so anything not listed here
+ * is dropped by the next hook event.
+ */
+function planKeys(bucket) {
+  const out = {}
+  if (bucket?.planApproval === 'pending' || bucket?.planApproval === 'approved') {
+    out.planApproval = bucket.planApproval
+  }
+  if (typeof bucket?.planSummary === 'string') out.planSummary = bucket.planSummary
+  if (bucket?.gates && typeof bucket.gates === 'object') {
+    const gates = {}
+    for (const key of GATE_KEYS) {
+      const g = bucket.gates[key]
+      if (g && typeof g === 'object') {
+        gates[key] = { rounds: Number(g.rounds) || 1, owner: String(g.owner || '') }
+      }
+    }
+    if (Object.keys(gates).length) out.gates = gates
+  }
+  return out
+}
+
+export function loadState() {
+  const path = getStatePath()
+  try {
+    if (!existsSync(path)) return emptyState()
+    const raw = JSON.parse(readFileSync(path, 'utf8'))
+    const migrated = migrateRaw(raw)
+    const sessions = {}
+    for (const [sid, bucket] of Object.entries(migrated.sessions || {})) {
+      sessions[sid] = {
+        roles:
+          bucket?.roles && typeof bucket.roles === 'object'
+            ? { ...bucket.roles }
+            : {},
+        blocks:
+          bucket?.blocks && typeof bucket.blocks === 'object'
+            ? { ...bucket.blocks }
+            : {},
+        ...planKeys(bucket),
+      }
+    }
+    return { sessions }
+  } catch {
+    return emptyState()
+  }
+}
+
+/** SessionEnd is not guaranteed (crash/kill) — keep the newest MAX_SESSIONS. */
+const MAX_SESSIONS = 20
+
+export function saveState(state) {
+  const path = getStatePath()
+  mkdirSync(dirname(path), { recursive: true })
+  const entries = Object.entries(state.sessions || {})
+  const trimmed =
+    entries.length > MAX_SESSIONS ? entries.slice(-MAX_SESSIONS) : entries
+  const sessions = {}
+  for (const [sid, bucket] of trimmed) {
+    sessions[sid] = {
+      roles: { ...(bucket.roles || {}) },
+      blocks: { ...(bucket.blocks || {}) },
+      ...planKeys(bucket),
+    }
+  }
+  const tmp = `${path}.${process.pid}.tmp`
+  writeFileSync(tmp, `${JSON.stringify({ sessions }, null, 2)}\n`, 'utf8')
+  renameSync(tmp, path)
+}
+
+export function lockPath() {
+  return `${getStatePath()}.lockdir`
+}
+
+function sleepSync(ms) {
+  const sab = new SharedArrayBuffer(4)
+  Atomics.wait(new Int32Array(sab), 0, 0, ms)
+}
+
+/**
+ * Exclusive lock around load→mutate→save (concurrent hook processes share state).
+ * Uses mkdir (atomic) rather than open(wx). Fail-closed on timeout — does not steal.
+ */
+export function withStateLock(fn) {
+  const path = lockPath()
+  mkdirSync(dirname(getStatePath()), { recursive: true })
+  const start = Date.now()
+  const timeout = lockTimeoutMs()
+  let held = false
+  while (!held) {
+    try {
+      mkdirSync(path)
+      held = true
+    } catch (err) {
+      if (err && err.code !== 'EEXIST') throw err
+      if (Date.now() - start > timeout) {
+        let staleHint = ''
+        try {
+          const st = statSync(path)
+          staleHint = ` lock_mtime_age_ms=${Date.now() - st.mtimeMs}`
+        } catch {
+          /* ignore */
+        }
+        throw new Error(
+          `agent-kit gate: state lock timeout after ${timeout}ms (fail-closed; remove orphan ${path} if stuck).${staleHint}`,
+        )
+      }
+      sleepSync(LOCK_RETRY_MS)
+    }
+  }
+  try {
+    return fn()
+  } finally {
+    try {
+      rmSync(path, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** JSONL path for structured run events (gitignored). */
+export function getRunEventsPath(date = new Date()) {
+  if (process.env.AGENT_KIT_RUN_EVENTS_PATH) {
+    return process.env.AGENT_KIT_RUN_EVENTS_PATH
+  }
+  const day = date.toISOString().slice(0, 10)
+  if (process.env.AGENT_KIT_STATE_PATH) {
+    return join(dirname(getStatePath()), 'runs', `${day}.jsonl`)
+  }
+  // .claude/hooks/state → .claude/memory/runs
+  return join(__dirname, '..', 'memory', 'runs', `${day}.jsonl`)
+}
+
+/** Append one run event to the local JSONL (best-effort, never throws). */
+export function appendRunEvent(event) {
+  if (process.env.AGENT_KIT_RUN_EVENTS === '0') return
+  const row = {
+    ts: new Date().toISOString(),
+    ...event,
+  }
+  try {
+    const path = getRunEventsPath()
+    mkdirSync(dirname(path), { recursive: true })
+    appendFileSync(path, `${JSON.stringify(row)}\n`, 'utf8')
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Explicit session id only (no conversation fallback). */
+export function sessionIdOf(normalized) {
+  return normalized.sessionId || FALLBACK_SESSION
+}
+
+/**
+ * Prefer explicit sessionId; else session that already maps parent/caller/subagent;
+ * else conversationId if it is already a session key; else _default.
+ */
+export function resolveSessionId(state, normalized) {
+  if (normalized.sessionId) return normalized.sessionId
+
+  const lookupIds = [normalized.callerAgentId, normalized.subagentId].filter(
+    Boolean,
+  )
+
+  for (const [sid, bucket] of Object.entries(state.sessions || {})) {
+    const roles = bucket?.roles || {}
+    for (const id of lookupIds) {
+      if (roles[id]) return sid
+    }
+  }
+
+  if (
+    normalized.conversationId &&
+    state.sessions?.[normalized.conversationId]
+  ) {
+    return normalized.conversationId
+  }
+
+  return FALLBACK_SESSION
+}
+
+export function ensureSession(state, sessionId) {
+  const id = sessionId || FALLBACK_SESSION
+  if (!state.sessions[id]) state.sessions[id] = { roles: {}, blocks: {} }
+  if (!state.sessions[id].blocks) state.sessions[id].blocks = {}
+  return state.sessions[id]
+}
+
+/** Max SubagentStop blocks per agent before the report gate goes advisory. */
+export const MAX_REPORT_BLOCKS = 2
+
+/**
+ * Count one worker-report rejection for `agentId`.
+ * @returns {number} blocks recorded so far (including this one)
+ */
+export function bumpReportBlock(sessionId, agentId) {
+  if (!agentId) return 1
+  return withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId)
+    const next = (bucket.blocks[agentId] || 0) + 1
+    bucket.blocks[agentId] = next
+    saveState(state)
+    return next
+  })
+}
+
+/** Plan summary lands in a permission dialog — truncate rather than widen. */
+export const PLAN_SUMMARY_MAX = 400
+
+/** Implementers held behind plan approval. Audit-only roles are never gated. */
+export const PLAN_GATE_IMPLEMENTERS = new Set([
+  'frontend',
+  'backend',
+  'tester',
+  'documenter',
+  'devops',
+  'infrastructure',
+])
+
+export function planGateEnabled() {
+  return process.env.AGENT_KIT_PLAN_GATE !== 'off'
+}
+
+/** planner done → the next implementer spawn asks the user to approve the plan. */
+export function setPlanPending(sessionId, summary) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    bucket.planApproval = 'pending'
+    bucket.planSummary = String(summary || '').slice(0, PLAN_SUMMARY_MAX)
+    saveState(state)
+  })
+}
+
+export function readPlanApproval(sessionId) {
+  const bucket = loadState().sessions[sessionId || FALLBACK_SESSION]
+  return {
+    planApproval: bucket?.planApproval,
+    planSummary: bucket?.planSummary || '',
+  }
+}
+
+/**
+ * SubagentStart is the only "yes" signal the adapter gets — the host never
+ * tells the hook how the user answered the ask.
+ */
+export function approvePlan(sessionId) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+    if (bucket?.planApproval !== 'pending') return
+    bucket.planApproval = 'approved'
+    saveState(state)
+  })
+}
+
+/**
+ * Access integrity: issue trackers and standards URLs are MCP-only. These are
+ * the high-confidence DIY bypasses — not a blanket ban on `gh` or `curl`.
+ * `gh pr` / `gh run` / localhost fetches stay allowed.
+ */
+const GH_TRACKER = /(?<![\w-])gh\s+(issue|api)\b/i
+const FETCHER = /(?<![\w-])(curl|wget|http|xh)\b/i
+const TRACKER_HOST =
+  /(api\.github\.com|[a-z0-9-]+\.atlassian\.net|api\.linear\.app|api\.notion\.com)/i
+
+/** @returns {string} what matched, or '' when the command is fine */
+export function detectTrackerBypass(command) {
+  const cmd = String(command || '')
+  if (GH_TRACKER.test(cmd)) return `\`gh ${cmd.match(GH_TRACKER)[1]}\``
+  const fetcher = cmd.match(FETCHER)
+  if (fetcher && TRACKER_HOST.test(cmd)) {
+    return `\`${fetcher[1]}\` to ${cmd.match(TRACKER_HOST)[1]}`
+  }
+  return ''
+}
+
+/**
+ * Audit fix-loop gates. A pending gate holds the managed close until the owner
+ * fixes and the auditor re-passes.
+ *
+ * `review`  — reviewer done with findingsSeverity: critical
+ * `test`    — tester done with verificationResult: fail blaming product code
+ * `secRisk` — security/risk done with findingsSeverity: critical
+ */
+export const GATE_KEYS = ['review', 'test', 'secRisk']
+
+/** Rounds before a gate stops blocking and becomes the user's call. */
+export const MAX_GATE_ROUNDS = 2
+
+/** Owners a tester may hand a product failure to — a harness fix is tester's own. */
+export const IMPLEMENTER_OWNERS = new Set([
+  'frontend',
+  'backend',
+  'devops',
+  'infrastructure',
+  'documenter',
+])
+
+export function readGates(sessionId) {
+  return loadState().sessions[sessionId || FALLBACK_SESSION]?.gates || {}
+}
+
+/** Open or re-open a gate; each call counts one round. */
+export function setGate(sessionId, key, owner = '') {
+  if (!GATE_KEYS.includes(key)) return
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    const prev = bucket.gates?.[key]
+    bucket.gates = {
+      ...(bucket.gates || {}),
+      [key]: { rounds: (prev?.rounds || 0) + 1, owner: String(owner || '') },
+    }
+    saveState(state)
+  })
+}
+
+export function clearGate(sessionId, key) {
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+    if (!bucket?.gates?.[key]) return
+    delete bucket.gates[key]
+    if (!Object.keys(bucket.gates).length) delete bucket.gates
+    saveState(state)
+  })
+}
+
+export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {
+  if (!id || !role) return
+  const bucket = ensureSession(state, sessionId)
+  bucket.roles[id] = role
+}
+
+export function clearRole(state, id, sessionId = FALLBACK_SESSION) {
+  if (!id) return
+  const bucket = state.sessions[sessionId]
+  if (!bucket?.roles?.[id]) return
+  delete bucket.roles[id]
+}
+
+/**
+ * Record child role; alias conversationId → role when it is not the session root.
+ */
+export function recordChildRole(state, sid, subagentId, role, conversationId) {
+  if (!subagentId || !role) return
+  rememberRole(state, subagentId, role, sid)
+  if (
+    !conversationId ||
+    conversationId === sid ||
+    conversationId === subagentId
+  ) {
+    return
+  }
+  const existing = state.sessions[sid]?.roles?.[conversationId]
+  if (existing === ROOT_ROLE) return
+  rememberRole(state, conversationId, role, sid)
+}
+
+export function callerRole(state, ids, sessionId = FALLBACK_SESSION) {
+  const roles = ensureSession(state, sessionId).roles
+  for (const id of ids) {
+    if (id && roles[id]) return roles[id]
+  }
+  return ROOT_ROLE
+}
+
+/**
+ * Resolve effective caller role for spawn gating.
+ */
+export function resolveEffectiveCaller(state, normalized) {
+  const typed = normalized.callerAgentType
+  if (WORKERS.has(typed) || typed === MANAGER) return typed
+  if (typed === ROOT_ROLE || typed === 'root') return ROOT_ROLE
+
+  const sid = resolveSessionId(state, normalized)
+  const roles = ensureSession(state, sid).roles
+
+  const parentOrCaller = [normalized.callerAgentId].filter(Boolean)
+
+  for (const id of parentOrCaller) {
+    if (roles[id]) return roles[id]
+  }
+  // conversationId before sessionId: session is always root after sessionStart;
+  // worker aliases live on conversationId (nest without parent must still deny).
+  if (normalized.conversationId && roles[normalized.conversationId]) {
+    return roles[normalized.conversationId]
+  }
+  if (normalized.sessionId && roles[normalized.sessionId]) {
+    return roles[normalized.sessionId]
+  }
+  // Unmapped parent/caller id → fail closed. No parent ids → root (main agent Task).
+  if (parentOrCaller.length > 0) return 'unknown'
+  return ROOT_ROLE
+}
+
+function emitSpawnDecision(normalized, result, sessionId, callerRoleName) {
+  if (result.action !== 'allow' && result.action !== 'deny') return
+  appendRunEvent({
+    event: result.action === 'deny' ? 'deny' : 'allow',
+    sessionId: sessionId || FALLBACK_SESSION,
+    role: callerRoleName || null,
+    agent: normalized.target || null,
+    status: result.action,
+    hookEvent: normalized.event || null,
+  })
+}
+
+function extractClaudeSpawnTarget(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return ''
+  if (toolInput.subagent_type) return String(toolInput.subagent_type)
+  if (toolInput.agent_type) return String(toolInput.agent_type)
+  if (typeof toolInput.description === 'string') {
+    const m = toolInput.description.match(/^([a-z0-9-]+)\s*:/i)
+    if (m) return m[1].toLowerCase()
+  }
+  return ''
+}
+
+export function normalizeClaudePayload(payload) {
+  const event = String(payload.hook_event_name || '')
+  const toolName = String(payload.tool_name || '')
+  const base = {
+    event,
+    conversationId: payload.session_id || '',
+    subagentId: payload.agent_id || '',
+    callerAgentType: String(payload.agent_type || ''),
+    callerAgentId: String(payload.agent_id || ''),
+    sessionId: payload.session_id || '',
+    toolName,
+  }
+
+  if (event === 'SubagentStart' || event === 'SubagentStop') {
+    return { ...base, target: String(payload.agent_type || '') }
+  }
+
+  if (event === 'PreToolUse') {
+    const isSpawnTool = /^(Agent|Task)$/i.test(toolName)
+    if (!isSpawnTool) {
+      return { ...base, target: '', skipGate: true }
+    }
+    return {
+      ...base,
+      subagentId: '',
+      target: extractClaudeSpawnTarget(payload.tool_input),
+      skipGate: false,
+    }
+  }
+
+  return { ...base, target: '' }
+}
+
+const isSessionStart = (event) => event === 'SessionStart'
+const isSessionEnd = (event) => event === 'SessionEnd'
+const isSubagentStart = (event) => event === 'SubagentStart'
+const isSubagentStop = (event) => event === 'SubagentStop'
+
+function clearIds(normalized, sid) {
+  const ids = [normalized.subagentId]
+  if (
+    normalized.conversationId &&
+    normalized.conversationId !== sid
+  ) {
+    ids.push(normalized.conversationId)
+  }
+  return ids.filter(Boolean)
+}
+
+function denyNestMessage(effectiveRole) {
+  const who =
+    effectiveRole === 'unknown'
+      ? 'unknown caller (parent/caller id not in role map)'
+      : `worker \`${effectiveRole}\``
+  return `Blocked: ${who} cannot spawn subagents. Return to manager with status: blocked (nesting/policy) — manager re-dispatches.`
+}
+
+function maybeDenySpawn(state, normalized) {
+  // Missing session/caller ids → treat as root via resolveEffectiveCaller
+  // (no parentOrCaller → ROOT). A main-agent Task carries no agent_id.
+  const effectiveRole = resolveEffectiveCaller(state, normalized)
+  if (WORKERS.has(effectiveRole) || effectiveRole === 'unknown') {
+    return {
+      action: 'deny',
+      message: denyNestMessage(effectiveRole),
+    }
+  }
+  return null
+}
+
+function decideUnlocked(normalized) {
+  const state = loadState()
+  const event = normalized.event
+
+  if (isSessionStart(event)) {
+    const id =
+      normalized.sessionId ||
+      (normalized.conversationId && normalized.conversationId) ||
+      ''
+    if (id) {
+      ensureSession(state, id)
+      rememberRole(state, id, ROOT_ROLE, id)
+      saveState(state)
+    }
+    return {
+      action: 'noop',
+      record: id ? { id, role: ROOT_ROLE } : undefined,
+    }
+  }
+
+  const sid = resolveSessionId(state, normalized)
+
+  if (isSessionEnd(event)) {
+    const endId = normalized.sessionId || normalized.conversationId || sid
+    if (state.sessions[endId]) {
+      delete state.sessions[endId]
+      saveState(state)
+    }
+    return { action: 'noop', clearId: endId }
+  }
+
+  if (isSubagentStop(event)) {
+    const bucket = ensureSession(state, sid)
+    for (const id of clearIds(normalized, sid)) {
+      clearRole(state, id, sid)
+      delete bucket.blocks[id]
+    }
+    saveState(state)
+    return { action: 'noop', clearId: normalized.subagentId || '' }
+  }
+
+  if (isSubagentStart(event)) {
+    const role = normalized.target
+    const id = normalized.subagentId
+    if (PROJECT_AGENTS.has(role) && id) {
+      // Alias conversationId here (child conv), not on preToolUse (caller conv)
+      recordChildRole(state, sid, id, role, normalized.conversationId)
+      saveState(state)
+    }
+    // SubagentStart records only; the nest gate lives on PreToolUse.
+    return {
+      action: 'noop',
+      record: id && role ? { id, role } : undefined,
+    }
+  }
+
+  if (normalized.skipGate) {
+    return { action: 'allow' }
+  }
+
+  const effectiveRole = resolveEffectiveCaller(state, normalized)
+  const denied = maybeDenySpawn(state, normalized)
+  if (denied) {
+    emitSpawnDecision(normalized, denied, sid, effectiveRole)
+    return denied
+  }
+
+  // Roles are recorded on SubagentStart, not here: a PreToolUse payload's
+  // conversation id is the caller's, and aliasing it to the child would let a
+  // worker inherit the manager's role.
+  const allowed = { action: 'allow' }
+  emitSpawnDecision(normalized, allowed, sid, effectiveRole)
+  return allowed
+}
+
+/**
+ * @returns {{ action: 'allow'|'deny'|'noop', message?: string, record?: { id: string, role: string }, clearId?: string }}
+ */
+export function decide(normalized) {
+  return withStateLock(() => decideUnlocked(normalized))
+}
+
+export async function readStdin() {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (c) => chunks.push(c))
+    process.stdin.on('end', () => resolve(chunks.join('')))
+    process.stdin.on('error', reject)
+  })
+}

@@ -50,7 +50,9 @@ trap cleanup EXIT
 
 if [[ -n "$FROM" ]]; then
   KIT_ROOT="$(cd "$FROM" && pwd)"
+  export AGENT_KIT_SOURCE="local"
 else
+  export AGENT_KIT_SOURCE="github"
   # Prefer running the install.mjs from the downloaded kit so script stays in sync.
   echo "Downloading ${REPO}@${REF} …"
   ARCHIVE="$TMP/kit.tar.gz"

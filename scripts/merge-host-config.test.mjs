@@ -12,12 +12,15 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import {
   mergeClaudeSettings,
-  mergeCursorHooks,
   CLAUDE_GATE,
-  CURSOR_GATE,
+  KIT_AGENT_MATCHER,
+  PRETOOL_MATCHER,
 } from './merge-host-config.mjs'
+import { PROJECT_AGENTS } from '../.claude/hooks/gate-core.mjs'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+test('KIT_AGENT_MATCHER stays in sync with PROJECT_AGENTS', () => {
+  assert.equal(KIT_AGENT_MATCHER, [...PROJECT_AGENTS].sort().join('|'))
+})
 
 test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () => {
   const target = mkdtempSync(join(tmpdir(), 'kit-merge-'))
@@ -29,7 +32,7 @@ test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () =
         hooks: {
           PreToolUse: [
             {
-              matcher: 'Agent|Task',
+              matcher: PRETOOL_MATCHER,
               hooks: [
                 { type: 'command', command: 'node foreign-audit.mjs' },
               ],
@@ -48,7 +51,7 @@ test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () =
     const doc = JSON.parse(
       readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
     )
-    const pre = doc.hooks.PreToolUse.find((e) => e.matcher === 'Agent|Task')
+    const pre = doc.hooks.PreToolUse.find((e) => e.matcher === PRETOOL_MATCHER)
     assert.ok(pre)
     const cmds = pre.hooks.map((h) => h.command)
     assert.ok(cmds.includes('node foreign-audit.mjs'))
@@ -66,27 +69,54 @@ test('mergeClaudeSettings preserves sibling foreign hooks on same matcher', () =
   }
 })
 
-test('mergeCursorHooks keeps foreign sessionStart entries', () => {
-  const target = mkdtempSync(join(tmpdir(), 'kit-merge-c-'))
+test('mergeClaudeSettings upgrades a legacy gate command in place', () => {
+  const target = mkdtempSync(join(tmpdir(), 'kit-merge-legacy-'))
+  const legacy = 'node .claude/hooks/adapters/claude.mjs'
   try {
-    mkdirSync(join(target, '.cursor'), { recursive: true })
+    mkdirSync(join(target, '.claude'), { recursive: true })
     writeFileSync(
-      join(target, '.cursor', 'hooks.json'),
+      join(target, '.claude', 'settings.json'),
       JSON.stringify({
-        version: 1,
         hooks: {
-          sessionStart: [{ command: 'node other.js' }],
+          SubagentStop: [
+            { hooks: [{ type: 'command', command: legacy }] },
+          ],
+          PreToolUse: [
+            {
+              matcher: PRETOOL_MATCHER,
+              hooks: [
+                { type: 'command', command: legacy },
+                { type: 'command', command: 'node foreign-audit.mjs' },
+              ],
+            },
+          ],
         },
       }),
       'utf8',
     )
-    mergeCursorHooks(target)
+    mergeClaudeSettings(target)
     const doc = JSON.parse(
-      readFileSync(join(target, '.cursor', 'hooks.json'), 'utf8'),
+      readFileSync(join(target, '.claude', 'settings.json'), 'utf8'),
     )
-    const cmds = doc.hooks.sessionStart.map((e) => e.command)
-    assert.ok(cmds.includes('node other.js'))
-    assert.ok(cmds.includes(CURSOR_GATE))
+    const all = Object.values(doc.hooks)
+      .flat()
+      .flatMap((e) => e.hooks || [])
+      .map((h) => h.command)
+    assert.equal(
+      all.filter((c) => c === legacy).length,
+      0,
+      'legacy command must be swept',
+    )
+    assert.equal(
+      all.filter((c) => c === CLAUDE_GATE).length,
+      5,
+      'exactly one kit gate per hook event',
+    )
+    assert.ok(all.includes('node foreign-audit.mjs'), 'foreign hook survives')
+    // Old matcher-less SubagentStop entry replaced by the kit-agent matcher.
+    assert.equal(doc.hooks.SubagentStop.length, 1)
+    assert.match(doc.hooks.SubagentStop[0].matcher, /frontend/)
+    assert.ok(doc.permissions.allow.length > 0)
   } finally {
     rmSync(target, { recursive: true, force: true })
   }

@@ -2,67 +2,43 @@
 
 Living status for kit correctness vs platform-shaped next steps.
 
-## Phase 0 — Re-rate leftovers (done in tree; capture still ops)
+Scope note: this branch is **Claude Code only**. Cursor and Copilot adapter trees
+are gone, and `gate-core.mjs` no longer carries a Cursor payload normalizer.
+Anything below that reads as multi-host is history, not a plan.
+
+## Correctness leftovers
 
 | Item | Status |
 |------|--------|
 | `verify-only` / `document` + `changed` bypass | **Done** — validator + schema (`verify-only` empty changed; `document` path pattern) + protocol |
 | Lock-steal timeout | **Done** — mkdir lock, fail-closed (no steal); `AGENT_KIT_LOCK_TIMEOUT_MS` |
 | Concurrency test theater | **Done** — multiprocess shared-state test |
-| Caller identity / invent-root | **Done** — unmapped parent → `unknown` deny; empty parent / missing ids → `root` (lean Cursor Task allow; noon semantics); **`conversationId` before `sessionId`** so worker conv aliases beat session root |
-| sessionId-before-conversationId fail-open | **Done** — nest without parent + worker `conversationId` alias denies (tests + check smoke) |
-| Real Cursor gate-log capture | **Ops** — set `AGENT_KIT_GATE_LOG=1`, attempt a worker nest, redact notes below |
-| Kit release tag | **Ops** — user-approved git tag (setup never auto-tags); pin via `AGENT_KIT_REF` |
+| Caller identity / invent-root | **Done** — unmapped caller → `unknown` deny; no caller id → `root` (a main-agent Task carries no `agent_id`) |
+| Nest gate placement | **Done** — the gate is on `PreToolUse`; `SubagentStart` is record-only |
 
-### Cursor gate-log capture (operator)
-
-```bash
-export AGENT_KIT_GATE_LOG=1
-# In Cursor: manager → worker, then have that worker try to spawn (expect deny)
-# Inspect: .agents/hooks/state/gate-log.jsonl
-```
-
-Record here after a real capture (redact ids):
-
-- Date:
-- `session_id` present? (yes/no)
-- `subagent_id` / `tool_call_id` present?
-- Nest deny observed? (yes/no)
-- Matrix claim after capture: Cursor nest gate is hard on Task `preToolUse`; `subagentStart` is record-only
-
-## Phase 1 — Instrument
+## Instrumentation
 
 | Item | Status |
 |------|--------|
-| Run-event JSONL | **Done** — gate emit deny/allow; schema `.agents/schemas/run-event.schema.json`; dir `.agents/memory/runs/` (gitignored). Disable: `AGENT_KIT_RUN_EVENTS=0`. Optional POST: `AGENT_KIT_TELEMETRY_URL` |
-| Kit version in `check` | **Done** — `.agents/.kit-version` |
+| Run-event JSONL | **Done** — gate emits deny/allow; schema `.claude/schemas/run-event.schema.json`; dir `.claude/memory/runs/` (gitignored). Disable: `AGENT_KIT_RUN_EVENTS=0`. Optional POST: `AGENT_KIT_TELEMETRY_URL` |
+| Kit version in `check` | **Done** — `.claude/.kit-version` |
 | Honest host matrix | See README feature matrix |
-| Manager Final report + Token costs | **Done** — mandatory close template; optional worker-report `usage`; never invent $ |
+| Manager Final report + Token costs | **Done** — mandatory close template; `scripts/format-final-report.mjs` renders the mechanical sections; counts come from the worker transcript and are marked `~` when measured one turn early |
 
-## Phase 2 — Cloud agents
+## Stage gates
 
-Checklist: [`phase-2-cloud-agents.md`](phase-2-cloud-agents.md).
+Shipped in full; per-phase build logs live in the stage-gate roadmap plan.
 
-| Item | Status |
+| Gate | Status |
 |------|--------|
-| Phase 2 doc + manager/code-review cloud notes | **Done** (doc + prompt wiring) |
-| README matrix Cloud agents row | **Partial** — stub until smoke |
-| Cloud gate hard vs soft | **Ops** — smoke nest-deny on cloud VM; update matrix |
-| Cloud MCP / secrets smoke | **Ops** |
-| End-to-end cloud smoke (planner → cloud implementer → close) | **Ops** — record below |
+| Plan approval (`PreToolUse` ask quoting the planner plan) | **Done** — advisory: `AGENT_KIT_PLAN_GATE=off`, errors fall through, bypass modes exist |
+| Access integrity (tracker bypass deny + report advisory) | **Done** |
+| Worker-report validation on `SubagentStop` | **Done** — blocks until valid, capped at 2 retries then advisory |
+| Audit fix-loops (`review` / `test` / `secRisk`) | **Done** — cap 2 rounds, then the user's call. **Only enforced when manager runs as a subagent** |
+| Context practices | **Done** — `.claude/protocols/context-practices.md`, docs only |
+| PoC playbook | **Done** — advisory, never gates a close |
 
-### Cloud smoke log (operator)
+## Deferred
 
-- Date:
-- Gate on cloud: hard / soft / unknown
-- MCP: ok / blocked (servers):
-- Usage in Final report: present / n/a (reason):
-- Merge-back: done / deferred
-
-## Phase 3 — CI eval loop (deferred)
-
-Deterministic `npm run eval`, adversarial cases, optional LLM routing — **not started**.
-
-## Phase 4 — Demo consumer (deferred)
-
-Filled stack-card example app — **not started**.
+- **CI eval loop** — deterministic `npm run eval`, adversarial routing cases. Not started.
+- **Demo consumer** — filled stack-card example app. Not started.
