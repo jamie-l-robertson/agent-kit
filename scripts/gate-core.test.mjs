@@ -38,6 +38,8 @@ import {
   clearGate,
   readGates,
   MAX_GATE_ROUNDS,
+  getRunEventsPath,
+  projectRoot,
 } from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -794,4 +796,41 @@ test('git branch is a write only when it creates, deletes or renames', () => {
 
 test('MANAGER_GIT_ALLOWED is exactly the recoverable local pair', () => {
   assert.deepEqual([...MANAGER_GIT_ALLOWED].sort(), ['add', 'commit'])
+})
+
+// See task-log.test.mjs: no-op today, pinned so relocating the hooks cannot
+// silently pool every project's run events into one shared directory.
+test('run events follow CLAUDE_PROJECT_DIR, and AGENT_KIT_* still wins', () => {
+  const prevProj = process.env.CLAUDE_PROJECT_DIR
+  const prevEvents = process.env.AGENT_KIT_RUN_EVENTS_PATH
+  const prevState = process.env.AGENT_KIT_STATE_PATH
+  try {
+    delete process.env.AGENT_KIT_RUN_EVENTS_PATH
+    delete process.env.AGENT_KIT_STATE_PATH
+    process.env.CLAUDE_PROJECT_DIR = '/tmp/proj-x'
+    assert.equal(
+      getRunEventsPath(new Date('2026-08-16T00:00:00.000Z')),
+      join('/tmp/proj-x', '.claude', 'memory', 'runs', '2026-08-16.jsonl'),
+    )
+    assert.equal(
+      projectRoot(),
+      '/tmp/proj-x',
+    )
+
+    process.env.AGENT_KIT_RUN_EVENTS_PATH = '/tmp/events.jsonl'
+    assert.equal(getRunEventsPath(), '/tmp/events.jsonl')
+
+    delete process.env.CLAUDE_PROJECT_DIR
+    const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
+    assert.equal(projectRoot(), repo)
+  } finally {
+    for (const [k, v] of [
+      ['CLAUDE_PROJECT_DIR', prevProj],
+      ['AGENT_KIT_RUN_EVENTS_PATH', prevEvents],
+      ['AGENT_KIT_STATE_PATH', prevState],
+    ]) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
 })

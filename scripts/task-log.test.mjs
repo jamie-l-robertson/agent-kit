@@ -10,7 +10,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   resolveTokenCount,
   formatTaskEntry,
@@ -18,6 +19,8 @@ import {
   splitTaskEntries,
   TASKS_HEADER,
   tokensFromTranscript,
+  getTasksMemoryPath,
+  getTasksArchiveDir,
 } from '../.claude/hooks/task-log.mjs'
 
 const sampleReport = {
@@ -203,4 +206,68 @@ test('a transcript-derived count is marked approximate', () => {
   assert.doesNotMatch(exact, /~/)
   const none = formatTaskEntry(sampleReport, { tokens: null, tokensApprox: true })
   assert.match(none, /\*\*Tokens\*\*: n\/a/, 'no tilde on a missing number')
+})
+
+// Path resolution: a no-op today (CLAUDE_PROJECT_DIR == repo root when the host
+// runs the hook), but pinned so relocating the hooks cannot silently merge
+// every project's memory into one shared directory.
+
+function withEnv(vars, fn) {
+  const prev = {}
+  for (const [k, v] of Object.entries(vars)) {
+    prev[k] = process.env[k]
+    if (v === null) delete process.env[k]
+    else process.env[k] = v
+  }
+  try {
+    fn()
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  }
+}
+
+test('task memory follows CLAUDE_PROJECT_DIR', () => {
+  withEnv(
+    {
+      AGENT_KIT_TASKS_PATH: null,
+      AGENT_KIT_TASKS_ARCHIVE_DIR: null,
+      CLAUDE_PROJECT_DIR: '/tmp/proj-x',
+    },
+    () => {
+      const mem = join('/tmp/proj-x', '.claude', 'memory')
+      assert.equal(getTasksMemoryPath(), join(mem, 'tasks.md'))
+      assert.equal(getTasksArchiveDir(), join(mem, 'tasks-archive'))
+    },
+  )
+})
+
+test('explicit root and AGENT_KIT_* still beat CLAUDE_PROJECT_DIR', () => {
+  withEnv(
+    { AGENT_KIT_TASKS_PATH: null, CLAUDE_PROJECT_DIR: '/tmp/proj-x' },
+    () => {
+      assert.equal(getTasksMemoryPath('/tmp/mem'), join('/tmp/mem', 'tasks.md'))
+      process.env.AGENT_KIT_TASKS_PATH = '/tmp/env-wins.md'
+      assert.equal(getTasksMemoryPath(), '/tmp/env-wins.md')
+    },
+  )
+})
+
+test('without CLAUDE_PROJECT_DIR task memory stays in this repo', () => {
+  withEnv(
+    {
+      AGENT_KIT_TASKS_PATH: null,
+      AGENT_KIT_TASKS_ARCHIVE_DIR: null,
+      CLAUDE_PROJECT_DIR: null,
+    },
+    () => {
+      const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
+      assert.equal(
+        getTasksMemoryPath(),
+        join(repo, '.claude', 'memory', 'tasks.md'),
+      )
+    },
+  )
 })
