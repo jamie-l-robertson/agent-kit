@@ -517,3 +517,72 @@ test('past the round cap the gate stops blocking and becomes the user call', () 
     assert.match(out.hookSpecificOutput.additionalContext, /ask the user/i)
   })
 })
+
+// --- git write policy ---
+
+const bashAs = (agent_type, command) => ({
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  session_id: 's1',
+  agent_id: agent_type ? `${agent_type}-1` : '',
+  agent_type,
+  tool_input: { command },
+})
+
+test('a worker cannot move the repo, and is told who can', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(bashAs('frontend', 'git commit -m "wip"'), dir)
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+    const reason = out.hookSpecificOutput.permissionDecisionReason
+    assert.match(reason, /commit/)
+    assert.match(reason, /manager/, 'must name who does commit')
+    assert.match(reason, /blocked/, 'must name the way out')
+  })
+})
+
+test('workers keep read-only git', () => {
+  withStateDir((dir) => {
+    for (const cmd of ['git status', 'git diff', 'git log --oneline -3']) {
+      assert.deepEqual(runAdapter(bashAs('tester', cmd), dir), {}, cmd)
+    }
+  })
+})
+
+test('the manager may stage and commit locally', () => {
+  withStateDir((dir) => {
+    assert.deepEqual(runAdapter(bashAs('manager', 'git add -A'), dir), {})
+    assert.deepEqual(runAdapter(bashAs('manager', 'git commit -m "ship"'), dir), {})
+  })
+})
+
+test('the manager may not push, branch, or rewrite history', () => {
+  withStateDir((dir) => {
+    for (const cmd of ['git push', 'git branch feature-x', 'git reset --hard HEAD~1']) {
+      const out = runAdapter(bashAs('manager', cmd), dir)
+      assert.equal(
+        out.hookSpecificOutput.permissionDecision,
+        'deny',
+        `manager must not run: ${cmd}`,
+      )
+      assert.match(out.hookSpecificOutput.permissionDecisionReason, /Final report/)
+    }
+  })
+})
+
+test('the human is never gated', () => {
+  withStateDir((dir) => {
+    assert.deepEqual(
+      runAdapter(bashAs('', 'git push origin main'), dir),
+      {},
+      'the main chat is not a kit agent',
+    )
+  })
+})
+
+test('a tracker bypass still wins its own message', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(bashAs('planner', 'gh issue view 42'), dir)
+    assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /MCP/)
+  })
+})

@@ -67,6 +67,7 @@ flowchart TD
 | **Nesting** — workers cannot spawn workers | `PreToolUse` on `Agent`/`Task` | **Hard deny.** Fail-closed: an unmapped caller is denied too |
 | **Plan approval** — the user sees the plan before implementers start | `PreToolUse` on `Agent`/`Task` | **Ask**, and a strong nudge only — `AGENT_KIT_PLAN_GATE=off`, hook errors, and bypass permission modes all let work through |
 | **Access integrity** — no `gh issue` / tracker fetches behind an MCP's back | `PreToolUse` on `Bash` | **Hard deny**, narrowly scoped to kit agents and tracker hosts |
+| **Git writes** — only the manager moves the repo | `PreToolUse` on `Bash` | **Hard deny.** Workers get read-only git; the manager may `add`/`commit` locally; `push` and `branch` are always the human's. The main chat is not gated |
 | **Worker report** — every specialist ends with a valid JSON fence | `SubagentStop` | **Blocks** until valid, then goes advisory after 2 retries so one bad worker cannot burn the session |
 | **Fix-loops** — a critical finding or a product test failure holds the close | `SubagentStop` | **Blocks** the manager's own stop, capped at 2 rounds. **Only bites when manager runs as a subagent** — as the main agent it is protocol, not enforcement |
 

@@ -24,6 +24,8 @@ import {
   readPlanApproval,
   approvePlan,
   detectTrackerBypass,
+  detectGitWrite,
+  MANAGER_GIT_ALLOWED,
   setGate,
   clearGate,
   readGates,
@@ -291,21 +293,37 @@ try {
     stopAdvisory = report.advisory
   }
 
-  // Non-spawn PreToolUse: access integrity only. Answered without touching
-  // state — this fires on every Bash call a kit agent makes.
+  // Non-spawn PreToolUse: Bash policy only. Answered without touching state —
+  // this fires on every Bash call a kit agent makes, so it must stay cheap.
   if (event === 'PreToolUse' && normalized.skipGate) {
-    const matched =
-      PROJECT_AGENTS.has(normalized.callerAgentType) &&
-      /^Bash$/i.test(normalized.toolName)
-        ? detectTrackerBypass(payload.tool_input?.command)
-        : ''
-    if (matched) {
+    const agent = normalized.callerAgentType
+    const isKitBash =
+      PROJECT_AGENTS.has(agent) && /^Bash$/i.test(normalized.toolName)
+    // The main chat is not a kit agent — the human is never gated here.
+    const command = isKitBash ? payload.tool_input?.command : ''
+
+    const bypass = isKitBash ? detectTrackerBypass(command) : ''
+    if (bypass) {
       denyPreToolUse(
-        `Blocked: ${matched} is a DIY bypass. Issue trackers and standards URLs are MCP-only (see .claude/protocols/ref-resolution.md). Use the tracker's MCP; if it is missing or unauthed, return status: blocked naming the server.`,
+        `Blocked: ${bypass} is a DIY bypass. Issue trackers and standards URLs are MCP-only (see .claude/protocols/ref-resolution.md). Use the tracker's MCP; if it is missing or unauthed, return status: blocked naming the server.`,
       )
-    } else {
-      noop()
+      process.exit(0)
     }
+
+    // Only the manager moves the repo, and only locally: add/commit are
+    // recoverable, push/branch/history are the user's call.
+    const gitWrite = isKitBash ? detectGitWrite(command) : ''
+    const managerMay = agent === MANAGER && MANAGER_GIT_ALLOWED.has(gitWrite)
+    if (gitWrite && !managerMay) {
+      denyPreToolUse(
+        agent === MANAGER
+          ? `Blocked: \`git ${gitWrite}\` is the user's to run, not yours. You may \`git add\` and \`git commit\` locally; anything that publishes or rewrites history goes in the Final report as a command for the user.`
+          : `Blocked: \`git ${gitWrite}\` — only the manager commits. Return to the manager with status: blocked (or done, with your work left in the tree) and let it integrate.`,
+      )
+      process.exit(0)
+    }
+
+    noop()
     process.exit(0)
   }
 
