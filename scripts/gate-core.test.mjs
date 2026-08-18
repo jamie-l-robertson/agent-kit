@@ -9,7 +9,7 @@ import {
   mkdtempSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import {
@@ -33,6 +33,10 @@ import {
   PLAN_SUMMARY_MAX,
   detectTrackerBypass,
   detectGitWrite,
+  detectEnvWrite,
+  detectNamedSpawn,
+  isWriteTool,
+  acquireWriteLease,
   MANAGER_GIT_ALLOWED,
   setGate,
   clearGate,
@@ -760,6 +764,96 @@ test('detectGitWrite flags every way an agent could move the repo', () => {
     ['git cherry-pick abc123', 'cherry-pick'],
   ]) {
     assert.equal(detectGitWrite(cmd), verb, `should flag: ${cmd}`)
+  }
+})
+
+test('detectNamedSpawn rejects a named kit spawn and leaves the rest alone', () => {
+  assert.equal(
+    detectNamedSpawn({ subagent_type: 'planner', name: 'shiftly-poc' }),
+    'shiftly-poc',
+  )
+  // Target inferred from the description prefix, same as the spawn gate does.
+  assert.equal(
+    detectNamedSpawn({ description: 'frontend: board', name: 'fe' }),
+    'fe',
+  )
+  // No name = ordinary subagent; non-kit target was never gated by this kit.
+  assert.equal(detectNamedSpawn({ subagent_type: 'planner' }), '')
+  assert.equal(
+    detectNamedSpawn({ subagent_type: 'general-purpose', name: 'scout' }),
+    '',
+  )
+  assert.equal(detectNamedSpawn(null), '')
+})
+
+test('a write lease blocks a second agent and frees on stop', () => {
+  const sid = 'S-lease'
+  const file = 'AGENTS.md'
+  rememberRole(loadState(), 'doc-1', 'documenter', sid)
+
+  // First writer takes the lease; re-writing the same file is still fine.
+  assert.equal(acquireWriteLease(sid, file, 'doc-1', 'documenter').ok, true)
+  assert.equal(acquireWriteLease(sid, file, 'doc-1', 'documenter').ok, true)
+
+  // A second live agent on the same file is denied, and told who holds it.
+  const clash = acquireWriteLease(sid, file, 'be-1', 'backend')
+  assert.equal(clash.ok, false)
+  assert.equal(clash.role, 'documenter')
+
+  // A different file is unaffected — the lease is per path, not per agent.
+  assert.equal(acquireWriteLease(sid, 'README.md', 'be-1', 'backend').ok, true)
+
+  // Relative and absolute spellings of one file are the same lease.
+  const abs = acquireWriteLease(sid, resolve(file), 'be-1', 'backend')
+  assert.equal(abs.ok, false)
+
+  // Once the holder stops, the path is free for the next agent.
+  decide({
+    event: 'SubagentStop',
+    sessionId: sid,
+    conversationId: sid,
+    subagentId: 'doc-1',
+    target: 'documenter',
+    callerAgentType: 'documenter',
+    callerAgentId: 'doc-1',
+  })
+  assert.equal(acquireWriteLease(sid, file, 'be-1', 'backend').ok, true)
+})
+
+test('isWriteTool matches the file-writing tools only', () => {
+  for (const t of ['Write', 'Edit', 'NotebookEdit', 'MultiEdit', 'edit']) {
+    assert.equal(isWriteTool(t), true, t)
+  }
+  for (const t of ['Bash', 'Read', 'Grep', 'Task', '']) {
+    assert.equal(isWriteTool(t), false, t)
+  }
+})
+
+test('detectEnvWrite catches the Bash routes around the Write deny', () => {
+  for (const [cmd, via] of [
+    ['echo "KEY=v" > .env', 'a shell redirect'],
+    ['printf x >> .env.local', 'a shell redirect'],
+    ['echo x >./.env', 'a shell redirect'],
+    ['echo "KEY=v" | tee .env', '`tee`'],
+    ['echo x | tee -a .env.production', '`tee`'],
+    ['cp .env.example .env', '`cp`/`mv`'],
+    ['mv /tmp/secrets .env.local', '`cp`/`mv`'],
+  ]) {
+    assert.equal(detectEnvWrite(cmd), via, `should block: ${cmd}`)
+  }
+})
+
+test('detectEnvWrite leaves reads and non-env writes alone', () => {
+  for (const cmd of [
+    'cat .env.example',
+    'ls -a',
+    'grep KEY .env.example',
+    'echo x > .environment-notes',
+    'echo x > src/env.ts',
+    'tee /tmp/log',
+    'pnpm build',
+  ]) {
+    assert.equal(detectEnvWrite(cmd), '', `should allow: ${cmd}`)
   }
 })
 

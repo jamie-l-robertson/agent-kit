@@ -55,6 +55,7 @@ When **Design system** is a real ref, `frontend` loads it before UI work and `re
 | <!-- e.g. server libs, collections, API routes --> | `backend` |
 | <!-- e.g. components, styles, pages --> | `frontend` |
 | <!-- shared isomorphic utils — set Writable paths when both frontend and backend are in flight --> | **Shared** |
+| `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/**` | `documenter` — **single-writer**. Several agents may legitimately write the stack card; only one per wave. Sequence, never parallelize. |
 
 ## Narrow commands
 
