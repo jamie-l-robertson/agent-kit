@@ -32,7 +32,11 @@ export const KIT_PERMISSIONS = [
 ]
 
 /** Agent|Task = call-graph gate; Bash = tracker-bypass deny (access integrity). */
-export const PRETOOL_MATCHER = 'Agent|Task|Bash'
+// Write|Edit|NotebookEdit|MultiEdit carry the write-lease check. Without them
+// the hook never sees a file write, so overlapping Writable paths were
+// unenforceable and collisions only showed up as workers clobbering each other.
+export const PRETOOL_MATCHER =
+  'Agent|Task|Bash|Write|Edit|NotebookEdit|MultiEdit'
 
 /** Secrets stay out of agent context — names and refs only. */
 export const KIT_DENY = ['Read(./.env)', 'Read(./.env.*)']

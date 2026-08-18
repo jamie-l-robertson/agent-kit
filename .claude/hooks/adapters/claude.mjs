@@ -25,6 +25,10 @@ import {
   approvePlan,
   detectTrackerBypass,
   detectGitWrite,
+  detectEnvWrite,
+  detectNamedSpawn,
+  isWriteTool,
+  acquireWriteLease,
   MANAGER_GIT_ALLOWED,
   setGate,
   clearGate,
@@ -65,7 +69,14 @@ function planGateSafe(fn) {
   if (!planGateEnabled()) return false
   try {
     return fn()
-  } catch {
+  } catch (err) {
+    // Advisory by design, so a throw here is invisible to the user and the
+    // plan simply never gets asked about. Record it or it is unfindable.
+    appendRunEvent({
+      event: 'plan-gate-error',
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack || null : null,
+    })
     return false
   }
 }
@@ -199,7 +210,24 @@ function holdManagedClose(sessionId) {
  */
 function handleSubagentStop(payload) {
   const agentType = String(payload.agent_type || '')
-  if (!PROJECT_AGENTS.has(agentType)) return { handled: false, advisory: '' }
+  if (!PROJECT_AGENTS.has(agentType)) {
+    // The silent path that let a named teammate finish unreported: spawning
+    // with `name` puts the child on the teammate roster, so agent_type stops
+    // naming a kit agent and the report gate below never runs. Log it —
+    // otherwise the only symptom is a worker that ends having said nothing.
+    appendRunEvent({
+      event: 'stop-ungated',
+      sessionId: String(payload.session_id || '') || null,
+      agent: agentType || null,
+      agentId: String(payload.agent_id || '') || null,
+      teammateName: String(payload.name || '') || null,
+      reason: agentType
+        ? `agent_type "${agentType}" is not a kit agent`
+        : 'payload carried no agent_type (spawned with `name`? teammates are not gated)',
+      hookEvent: 'SubagentStop',
+    })
+    return { handled: false, advisory: '' }
+  }
 
   const sessionId = String(payload.session_id || '')
   const agentId = String(payload.agent_id || '')
@@ -297,6 +325,34 @@ try {
   // this fires on every Bash call a kit agent makes, so it must stay cheap.
   if (event === 'PreToolUse' && normalized.skipGate) {
     const agent = normalized.callerAgentType
+
+    // Write lease: the mechanical form of "Writable paths must not overlap".
+    // Kit agents only — the human's main chat is never leased or blocked.
+    if (PROJECT_AGENTS.has(agent) && isWriteTool(normalized.toolName)) {
+      const filePath = payload.tool_input?.file_path || ''
+      const lease = acquireWriteLease(
+        normalized.sessionId,
+        filePath,
+        normalized.callerAgentId,
+        agent,
+      )
+      if (!lease.ok) {
+        appendRunEvent({
+          event: 'write-lease-denied',
+          sessionId: normalized.sessionId || null,
+          role: agent,
+          path: filePath,
+          holder: lease.holder,
+          holderRole: lease.role,
+          hookEvent: 'PreToolUse',
+        })
+        denyPreToolUse(
+          `Blocked: \`${lease.role}\` is already writing ${filePath} in this session. Two agents editing one file clobber each other, so the second is stopped rather than allowed to race. Return to the manager with status: blocked (overlapping Writable paths) and let it sequence the edits.`,
+        )
+        process.exit(0)
+      }
+    }
+
     const isKitBash =
       PROJECT_AGENTS.has(agent) && /^Bash$/i.test(normalized.toolName)
     // The main chat is not a kit agent — the human is never gated here.
@@ -306,6 +362,23 @@ try {
     if (bypass) {
       denyPreToolUse(
         `Blocked: ${bypass} is a DIY bypass. Issue trackers and standards URLs are MCP-only (see .claude/protocols/ref-resolution.md). Use the tracker's MCP; if it is missing or unauthed, return status: blocked naming the server.`,
+      )
+      process.exit(0)
+    }
+
+    // The Write/Read denies in settings.json never see Bash, so a redirect or
+    // `tee` reaches .env unchallenged. Same rule, enforced on the other path.
+    const envWrite = isKitBash ? detectEnvWrite(command) : ''
+    if (envWrite) {
+      appendRunEvent({
+        event: 'env-write-blocked',
+        sessionId: normalized.sessionId || null,
+        agent,
+        via: envWrite,
+        hookEvent: 'PreToolUse',
+      })
+      denyPreToolUse(
+        `Blocked: writing a .env file via ${envWrite} bypasses the Write deny in .claude/settings.json — the rule is the same on Bash. Secrets are names/refs only, never values in the repo. Need an env var set? Name it in your report and let the user write it.`,
       )
       process.exit(0)
     }
@@ -325,6 +398,27 @@ try {
 
     noop()
     process.exit(0)
+  }
+
+  // Named spawns are rejected for everyone, root included. The nest gate
+  // exempts root by design, but root is exactly who can create an ungated
+  // teammate — which is how a worker once finished having reported nothing.
+  if (event === 'PreToolUse' && !normalized.skipGate) {
+    const teammate = detectNamedSpawn(payload.tool_input)
+    if (teammate) {
+      appendRunEvent({
+        event: 'named-spawn-blocked',
+        sessionId: normalized.sessionId || null,
+        role: normalized.callerAgentType || 'root',
+        agent: normalized.target || null,
+        teammateName: teammate,
+        hookEvent: 'PreToolUse',
+      })
+      denyPreToolUse(
+        `Blocked: spawning \`${normalized.target}\` with name: "${teammate}" makes it an addressable teammate, not a subagent. Teammates sit on a flat roster (it could not dispatch specialists) and their agent_type stops matching the SubagentStop matcher, so the worker-report gate would never run and it could finish silently. Drop \`name\`; put \`${normalized.target}: <task>\` in \`description\`.`,
+      )
+      process.exit(0)
+    }
   }
 
   const result = decide(normalized)
@@ -362,6 +456,16 @@ try {
   noop()
 } catch (err) {
   const msg = `gate-subagents: ${err instanceof Error ? err.message : String(err)}`
+  // On PreToolUse the deny reason carries the message to the user. Every other
+  // event writes {} and the crash is swallowed whole — log before that happens.
+  appendRunEvent({
+    event: 'hook-error',
+    hookEvent: String(payload.hook_event_name || '') || null,
+    sessionId: String(payload.session_id || '') || null,
+    agent: String(payload.agent_type || '') || null,
+    error: msg,
+    stack: err instanceof Error ? err.stack || null : null,
+  })
   if (String(payload.hook_event_name || '') === 'PreToolUse') {
     denyPreToolUse(msg)
   } else {

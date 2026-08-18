@@ -22,7 +22,7 @@ import {
   rmSync,
   renameSync,
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -84,6 +84,25 @@ function migrateRaw(raw) {
  * The bucket is rebuilt key-by-key on both sides, so anything not listed here
  * is dropped by the next hook event.
  */
+/**
+ * Write leases survive a reload. loadState rebuilds each bucket from a
+ * whitelist, so anything not named here is dropped — which silently turns the
+ * lease check into a no-op.
+ */
+function leaseKeys(bucket) {
+  if (!bucket?.leases || typeof bucket.leases !== 'object') return {}
+  const leases = {}
+  for (const [key, held] of Object.entries(bucket.leases)) {
+    if (!held || typeof held !== 'object' || !held.agentId) continue
+    leases[key] = {
+      agentId: String(held.agentId),
+      role: String(held.role || ''),
+      ts: Number(held.ts) || 0,
+    }
+  }
+  return Object.keys(leases).length ? { leases } : {}
+}
+
 function planKeys(bucket) {
   const out = {}
   if (bucket?.planApproval === 'pending' || bucket?.planApproval === 'approved') {
@@ -121,6 +140,7 @@ export function loadState() {
             ? { ...bucket.blocks }
             : {},
         ...planKeys(bucket),
+        ...leaseKeys(bucket),
       }
     }
     return { sessions }
@@ -144,6 +164,7 @@ export function saveState(state) {
       roles: { ...(bucket.roles || {}) },
       blocks: { ...(bucket.blocks || {}) },
       ...planKeys(bucket),
+      ...leaseKeys(bucket),
     }
   }
   const tmp = `${path}.${process.pid}.tmp`
@@ -458,6 +479,94 @@ export function detectGitWrite(command) {
   return GIT_BRANCH_WRITE.test(cmd) ? 'branch' : ''
 }
 
+/**
+ * Bash writes that land on a `.env` file. Tool-level `Write`/`Read` denies in
+ * settings.json do not see Bash, so `echo … | tee .env` walks straight past
+ * them. Cover the three shapes a worker actually reaches for.
+ *
+ * ponytail: pattern-matched, not shell-parsed — `base64 -d`, a variable
+ * holding the path, or a heredoc through `sh -c` all still get through. This
+ * closes the accidental bypass, not a determined one. The durable fix is
+ * secrets never being in the repo to write; escalate to a real sandbox if a
+ * worker is adversarial.
+ */
+const ENV_FILE = String.raw`(?:\./)?\.env(?:\.[\w.-]+)?(?![\w.-])`
+const ENV_REDIRECT = new RegExp(String.raw`>>?\s*${ENV_FILE}`, 'i')
+const ENV_TEE = new RegExp(
+  String.raw`(?<![\w-])tee(?:\s+-\S+)*\s+${ENV_FILE}`,
+  'i',
+)
+const ENV_COPY = new RegExp(
+  String.raw`(?<![\w-])(?:cp|mv|install)\s+\S+\s+${ENV_FILE}`,
+  'i',
+)
+
+/**
+ * Write leases — the mechanical form of "parallelize only when Writable paths
+ * do not overlap". First kit agent to write a path holds it until it stops;
+ * a second live agent writing the same path is denied rather than silently
+ * clobbering. Config-free: it needs no ownership table and no brief parsing,
+ * so it cannot deny on a misread of user-authored prose.
+ *
+ * ponytail: TTL is a backstop for agents that die without SubagentStop, not
+ * the primary release — that happens in decide()'s stop branch. Raise it if a
+ * legitimately long worker ever gets bumped mid-edit.
+ */
+export const WRITE_LEASE_TTL_MS = 30 * 60 * 1000
+
+/** Tools whose tool_input.file_path names a file about to be written. */
+const WRITE_TOOLS = /^(Write|Edit|NotebookEdit|MultiEdit)$/i
+
+export function isWriteTool(toolName) {
+  return WRITE_TOOLS.test(String(toolName || ''))
+}
+
+/** Absolute, so two agents naming the same file agree on the key. */
+export function leaseKey(filePath) {
+  const p = String(filePath || '')
+  return p ? resolve(p) : ''
+}
+
+/**
+ * @returns {{ ok: true } | { ok: false, holder: string, role: string }}
+ */
+export function acquireWriteLease(sessionId, filePath, agentId, role) {
+  const key = leaseKey(filePath)
+  if (!key || !agentId) return { ok: true }
+  return withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    bucket.leases ||= {}
+    const held = bucket.leases[key]
+    const fresh =
+      held && Date.now() - Number(held.ts || 0) < WRITE_LEASE_TTL_MS
+    if (fresh && held.agentId !== agentId) {
+      return { ok: false, holder: held.agentId, role: held.role || 'another agent' }
+    }
+    bucket.leases[key] = { agentId, role: role || '', ts: Date.now() }
+    saveState(state)
+    return { ok: true }
+  })
+}
+
+/** Drop every lease an agent holds. Called when its role clears at stop. */
+export function releaseWriteLeases(state, sessionId, agentId) {
+  const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+  if (!bucket?.leases || !agentId) return
+  for (const [key, held] of Object.entries(bucket.leases)) {
+    if (held?.agentId === agentId) delete bucket.leases[key]
+  }
+}
+
+/** @returns {string} how the command writes a .env file, or '' when it does not */
+export function detectEnvWrite(command) {
+  const cmd = String(command || '')
+  if (ENV_REDIRECT.test(cmd)) return 'a shell redirect'
+  if (ENV_TEE.test(cmd)) return '`tee`'
+  if (ENV_COPY.test(cmd)) return '`cp`/`mv`'
+  return ''
+}
+
 export function rememberRole(state, id, role, sessionId = FALLBACK_SESSION) {
   if (!id || !role) return
   const bucket = ensureSession(state, sessionId)
@@ -547,6 +656,24 @@ function extractClaudeSpawnTarget(toolInput) {
     if (m) return m[1].toLowerCase()
   }
   return ''
+}
+
+/**
+ * A spawn that passes `name` registers the child on the teammate roster
+ * instead of as a subagent. Two consequences, both silent:
+ *   - the roster is flat, so the child cannot dispatch specialists;
+ *   - its agent_type stops matching the SubagentStop matcher in
+ *     settings.json, so the worker-report gate never validates its report.
+ * Only kit targets are denied — a named teammate of a non-kit type
+ * (general-purpose, Explore) was never gated by this kit anyway.
+ *
+ * @returns {string} the teammate name to reject, or '' when the spawn is fine
+ */
+export function detectNamedSpawn(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return ''
+  const name = String(toolInput.name || '').trim()
+  if (!name) return ''
+  return PROJECT_AGENTS.has(extractClaudeSpawnTarget(toolInput)) ? name : ''
 }
 
 export function normalizeClaudePayload(payload) {
@@ -655,6 +782,9 @@ function decideUnlocked(normalized) {
     for (const id of clearIds(normalized, sid)) {
       clearRole(state, id, sid)
       delete bucket.blocks[id]
+      // The agent is done, so whatever it was holding is free. This is the
+      // real release; WRITE_LEASE_TTL_MS only covers agents that never stop.
+      releaseWriteLeases(state, sid, id)
     }
     saveState(state)
     return { action: 'noop', clearId: normalized.subagentId || '' }

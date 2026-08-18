@@ -75,12 +75,13 @@ Clickable specialist panels appear when you call the host **Task** / **Agent** t
 | Concern | Value |
 |---------|--------|
 | Specialist | Exact kit name: `planner` \| `researcher` \| `frontend` \| `backend` \| `tester` \| `reviewer` \| `documenter` \| `security` \| `devops` \| `infrastructure` \| `risk` |
-| Title / description | **`<agent>: <task>`** — the agent name comes first, always. e.g. `frontend: blog pagination`, `researcher: 2026 market stats` |
+| `description` | **`<agent>: <task>`** — the agent name comes first, always. e.g. `frontend: blog pagination`, `researcher: 2026 market stats` |
+| `name` | **Never pass it.** It registers the child as an addressable teammate, and teammates cannot spawn teammates — the dispatch is rejected. The panel label is `description`. |
 | Prompt | Full brief-hygiene Worker brief |
 
 Prefer foreground / blocking spawns so users can open the worker. Prefer **fast-path** when eligible to cut orchestration latency.
 
-**The spawn title is the only thing the user sees while work runs — it must name the specialist.** A title that omits the agent leaves the user watching an anonymous panel.
+**The `description` is the only thing the user sees while work runs — it must name the specialist.** A label that omits the agent leaves the user watching an anonymous panel.
 
 | Bad | Good |
 |-----|------|
@@ -117,7 +118,8 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 - **PoC / spike / prototype / "just show me it works"** → **poc-playbook** before dispatch: name the one question, pick greenfield vs existing, and put observable demo criteria in the brief `Success`. A PoC whose Success is a feeling wastes the run.
 - **Otherwise** (multi-step, multi-domain, issue-backed, unclear ownership) → `Task` → `planner` first. Prefer planner Worker briefs; fill missing `Model:` from `.claude/agents/<name>.md` (`inherit` default).
 - After planner: **gap/ask in chat → implementer spawn (hook asks the user to approve the plan)**. Never dispatch a plan the user has not seen.
-- Parallelize only when Writable paths do not overlap.
+- Parallelize only when Writable paths do not overlap. Nothing enforces this — an overlap surfaces as two workers clobbering each other mid-run, so it is yours to get right before dispatch, not to discover after.
+- **The stack card is single-writer.** `AGENTS.md`, `CLAUDE.md` and `README.md` are read by every agent and writable by several (`documenter`, the `setup` skill, any worker refreshing narrow commands after a scaffold). Never put them in two briefs in the same wave — sequence those edits behind one owner, normally `documenter`.
 - A11y: markup/WCAG fixes → `frontend`; harness → `tester`.
 - No-owner: pure cloud-console with no IaC/CLI/creds (plus `AGENTS.md` zones).
 - `security` / `risk` / `researcher` are **audit-only** — they return findings; you dispatch the best implementer or report to the user. Never brief them with `Mode: implement`. CVE/lockfile remediations → `backend`.
