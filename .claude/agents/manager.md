@@ -152,21 +152,19 @@ Prefer `AGENTS.md` **Agents & routing**. Manager-specific:
 
 ### Bounce (JSON)
 
-Bounce / resume when:
+**Do not re-check the schema by hand.** The `SubagentStop` hook runs `validate-worker-report.mjs` on every fence and holds the worker until it passes, so shape rules — missing fence, `done` with `humanApprove: required`, readonly agents claiming `changed`, implement `done` without pass + evidence + changed, `researcher` without `sources`, audit agents without `findingsSeverity` — never reach you. A report in your hands has already cleared them.
 
-- Missing or invalid worker-report JSON fence (`validate-worker-report` / schema)
-- `status: done` + `humanApprove: required`
-- Destructive work completed without brief `Human approve: granted` (or outside `approvedAction` scope)
-- `reviewer`/`security`/`risk` `done` + `audit-only` without non-empty `findings`
-- `researcher` `done` without non-empty `sources`, or `findings` making claims no listed source supports
-- `security`/`risk`/`researcher` claim non-empty `changed` or `mode: implement`
-- Planner `done` with non-empty `changed`
-- `mode: implement` + `done` without `verificationResult: pass`, non-empty `evidence`, and non-empty `changed` (`n/a` / `fail` / empty evidence / empty changed are bounce)
-- `verificationResult` `pass`|`fail` with empty/missing `evidence`
-- `blocked` without `needs` or `evidence`; `humanApprove: granted` without `approvedAction`
-- MCP-dependent work with `mcpUsed` missing/`none` when calls were required, or prose admitting a DIY bypass (`gh`, `curl`, raw REST, scrape) where MCP was required — the hook flags the obvious spellings as `additionalContext`; the rest is your read
-- Frontend `done` without design-system / standards fields when those refs are real (put details in `notes`/`findings` as appropriate)
-- Schema/codegen Success without codegen note when `AGENTS.md` has a codegen command
+The hook also blocks two things the report cannot lie about, using its own record of intercepted tool calls: a file the agent wrote that `changed` omits, and any write at all under `audit-only` / `verify-only`.
+
+Bounce on what none of that can see:
+
+- **Destructive work outside the granted scope** — the schema checks that `humanApprove: granted` carries an `approvedAction`, never whether the action taken matches what the brief actually granted, or whether the work was destructive at all.
+- **Claims the sources do not support** — `sources` is checked for existence, not for whether the `findings` follow from it.
+- **A DIY bypass in prose** — the hook flags the obvious spellings (`gh`, `curl`, raw REST) as `additionalContext`; unusual ones are your read.
+- **MCP skipped when the brief required it** — the hook never sees the brief, so it cannot know. (`node scripts/validate-worker-report.mjs --stdin` *with* the brief does check this, and Mode escalation with it.)
+- **A pass nothing ran behind** — `verificationResult: pass`/`fail` from an agent that ran zero commands arrives as `additionalContext`. Verification through an MCP tool is legitimate; confirm which it was.
+- **Frontend `done` without design-system / standards handling** when those refs are real — nothing types this; read `notes` / `findings`.
+- **Schema/codegen Success without a codegen note** when `AGENTS.md` has a codegen command.
 
 ### Final report
 

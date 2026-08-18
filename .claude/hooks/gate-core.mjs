@@ -22,7 +22,7 @@ import {
   rmSync,
   renameSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -122,6 +122,21 @@ function leaseKeys(bucket) {
   return Object.keys(leases).length ? { leases } : {}
 }
 
+/**
+ * Per-agent Bash counts survive a reload, same whitelist rule as leases.
+ * Counts only — command strings would drag secrets out of arg lists and into
+ * state, and the only question asked of them is "did this agent run anything".
+ */
+function commandKeys(bucket) {
+  if (!bucket?.commands || typeof bucket.commands !== 'object') return {}
+  const commands = {}
+  for (const [agentId, n] of Object.entries(bucket.commands)) {
+    const count = Number(n)
+    if (agentId && Number.isFinite(count) && count > 0) commands[agentId] = count
+  }
+  return Object.keys(commands).length ? { commands } : {}
+}
+
 function planKeys(bucket) {
   const out = {}
   if (bucket?.planApproval === 'pending' || bucket?.planApproval === 'approved') {
@@ -160,6 +175,7 @@ export function loadState() {
             : {},
         ...planKeys(bucket),
         ...leaseKeys(bucket),
+        ...commandKeys(bucket),
       }
     }
     return { sessions }
@@ -184,6 +200,7 @@ export function saveState(state) {
       blocks: { ...(bucket.blocks || {}) },
       ...planKeys(bucket),
       ...leaseKeys(bucket),
+      ...commandKeys(bucket),
     }
   }
   const tmp = `${path}.${process.pid}.tmp`
@@ -577,6 +594,222 @@ export function releaseWriteLeases(state, sessionId, agentId) {
   }
 }
 
+/**
+ * Count a Bash command a kit agent is about to run.
+ *
+ * `evidence` is a string the model writes, so it proves nothing on its own.
+ * This count is the cheapest independent signal that a `verificationResult`
+ * was earned rather than asserted: an agent that graded a test run without
+ * running a single command did not run the tests.
+ */
+export function recordAgentCommand(sessionId, agentId) {
+  if (!agentId) return
+  withStateLock(() => {
+    const state = loadState()
+    const bucket = ensureSession(state, sessionId || FALLBACK_SESSION)
+    bucket.commands ||= {}
+    bucket.commands[agentId] = Number(bucket.commands[agentId] || 0) + 1
+    saveState(state)
+  })
+}
+
+/** @returns {number} Bash commands this agent ran in this session. */
+export function commandCountFor(sessionId, agentId) {
+  if (!agentId) return 0
+  const bucket = loadState().sessions[sessionId || FALLBACK_SESSION]
+  return Number(bucket?.commands?.[agentId] || 0)
+}
+
+/** Drop an agent's command count. Paired with releaseWriteLeases at stop. */
+export function releaseAgentCommands(state, sessionId, agentId) {
+  const bucket = state.sessions[sessionId || FALLBACK_SESSION]
+  if (!bucket?.commands || !agentId) return
+  delete bucket.commands[agentId]
+}
+
+/**
+ * Absolute paths an agent currently holds leases on. Read this at
+ * SubagentStop *before* releaseWriteLeases drops them — it is the only
+ * record of what the agent actually wrote, as opposed to what it claims.
+ * @returns {string[]}
+ */
+export function leasedPathsFor(sessionId, agentId) {
+  if (!agentId) return []
+  const bucket = loadState().sessions[sessionId || FALLBACK_SESSION]
+  if (!bucket?.leases) return []
+  return Object.entries(bucket.leases)
+    .filter(([, held]) => held?.agentId === agentId)
+    .map(([key]) => key)
+}
+
+/**
+ * Compare intercepted write leases against a worker report's `changed[]`.
+ *
+ * `unreported` is hard evidence: the hook saw a Write/Edit tool call the
+ * report does not mention. `unleased` is softer — leases are only taken for
+ * WRITE_TOOLS (gate-core `isWriteTool`), so a file written via Bash
+ * (`sed -i`, heredoc, redirect) legitimately has no lease.
+ *
+ * @param {string[]} leasedAbsPaths
+ * @param {unknown} changed
+ * @param {string} projectDir
+ * @returns {{ leased: string[], unreported: string[], unleased: string[] }}
+ */
+export function diffLeasesAgainstChanged(leasedAbsPaths, changed, projectDir) {
+  const base = projectDir || process.cwd()
+  const norm = (p) => {
+    const raw = String(p || '').trim()
+    if (!raw) return ''
+    return relative(base, resolve(base, raw)).split(sep).join('/')
+  }
+  const leased = new Set((leasedAbsPaths || []).map(norm).filter(Boolean))
+  const claimed = new Set(
+    (Array.isArray(changed) ? changed : []).map(norm).filter(Boolean),
+  )
+  return {
+    leased: [...leased],
+    unreported: [...leased].filter((p) => !claimed.has(p)),
+    unleased: [...claimed].filter((p) => !leased.has(p)),
+  }
+}
+
+/* --- Stack card ---------------------------------------------------------- */
+
+/**
+ * Read one `- **Label**: value` bullet out of AGENTS.md.
+ * Lives here rather than in scripts/ because the hooks read the card too, and
+ * check-agent-kit already imports from this file — the dependency only runs
+ * one way.
+ * @param {string} agentsMd
+ * @param {string} label e.g. "Design system"
+ */
+export function parseAgentsStackValue(agentsMd, label) {
+  const re = new RegExp(
+    `^-\\s+\\*\\*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*:\\s*(.+)$`,
+    'mi',
+  )
+  const m = re.exec(agentsMd)
+  return m ? m[1].trim() : ''
+}
+
+/** Strip HTML comments and normalize. An unfilled placeholder becomes ''. */
+export function normalizeStackRef(raw) {
+  return String(raw || '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .trim()
+}
+
+/* --- Ticket scope -------------------------------------------------------- */
+
+/**
+ * MCP tools that deal in tickets. Matched on the **tool** name, never the
+ * server id: servers register under UUIDs (`mcp__34a8…__`) and via plugins, so
+ * an id match would break on every reinstall.
+ */
+const TICKET_TOOL = /(jira|issue|ticket|atlassian)/i
+
+/** `PROJ-123`. Also matches CVE-2024-1234 / UTF-8, hence the tool-name gate. */
+const JIRA_KEY = /\b([A-Z][A-Z0-9]+)-\d+\b/g
+
+/** `owner/repo`, plus the same inside a github.com URL. */
+const GH_URL = /github\.com\/([\w.-]+\/[\w.-]+)/gi
+const GH_SLUG = /\b([\w.-]+\/[\w.-]+)\b/g
+
+export function isTicketTool(toolName) {
+  const name = String(toolName || '')
+  return name.startsWith('mcp__') && TICKET_TOOL.test(name)
+}
+
+/** Split a comma-separated stack-card value; '' / n/a / placeholder → []. */
+export function parseScopeList(raw) {
+  const v = normalizeStackRef(raw).toLowerCase()
+  if (!v || v === 'n/a' || v === 'na' || v === 'none') return []
+  return v
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Ticket refs mentioned anywhere in an MCP call's arguments.
+ * Whole-payload scan on purpose: every tracker MCP names its parameters
+ * differently, and a scan cannot be out of date the way a field list would be.
+ * @returns {{ jira: string[], github: string[] }}
+ */
+export function extractTicketRefs(toolInput) {
+  let text = ''
+  try {
+    text = JSON.stringify(toolInput ?? '')
+  } catch {
+    return { jira: [], github: [] }
+  }
+  const jira = new Set()
+  for (const m of text.matchAll(JIRA_KEY)) jira.add(m[1].toUpperCase())
+  const github = new Set()
+  for (const m of text.matchAll(GH_URL)) github.add(m[1].toLowerCase())
+  // Bare owner/repo only when no URL form was found, so a URL does not also
+  // register its path segments as a second, bogus slug.
+  if (!github.size) {
+    for (const m of text.matchAll(GH_SLUG)) {
+      const slug = m[1].toLowerCase()
+      if (!slug.includes('.') || /\//.test(slug)) github.add(slug)
+    }
+  }
+  return { jira: [...jira], github: [...github] }
+}
+
+/**
+ * Fail closed: an unconfigured scope denies as loudly as a wrong one.
+ *
+ * A tracker call is a read or a write against someone's real project. Getting
+ * it wrong means planning off the wrong ticket, or worse, commenting on it —
+ * so "we never said which project" is not a reason to allow it through.
+ *
+ * @param {{ jira: string[], github: string[] }} refs
+ * @param {{ jiraKeys: string[], githubRepos: string[] }} scope
+ * @returns {string} deny reason, or '' to allow
+ */
+export function ticketScopeDenial(refs, scope) {
+  const { jira = [], github = [] } = refs || {}
+  if (!jira.length && !github.length) return ''
+
+  const jiraKeys = scope?.jiraKeys || []
+  const githubRepos = scope?.githubRepos || []
+
+  if (jira.length && !jiraKeys.length) {
+    return `Blocked: this call names ${jira.join(', ')}, but AGENTS.md has no **Jira project key**. Without it there is nothing to check the ticket against, and a call to the wrong board reads or edits someone else's project. Ask the user to run the **setup** skill and set the key (comma-separate several).`
+  }
+  if (github.length && !githubRepos.length) {
+    return `Blocked: this call names ${github.join(', ')}, but AGENTS.md has no **GitHub repo**. Ask the user to run the **setup** skill and set it (comma-separate several).`
+  }
+
+  const badJira = jira.filter((k) => !jiraKeys.includes(k.toLowerCase()))
+  if (badJira.length) {
+    // Keys are compared lowercased but shown as people write them.
+    const shown = jiraKeys.map((k) => k.toUpperCase()).join(', ')
+    return `Blocked: ${badJira.join(', ')} is outside this project's Jira scope (${shown}). If the ticket really belongs to this work, ask the user to add its key to **Jira project key** in AGENTS.md; otherwise you have the wrong ticket.`
+  }
+  const badRepo = github.filter((r) => !githubRepos.includes(r))
+  if (badRepo.length) {
+    return `Blocked: ${badRepo.join(', ')} is outside this project's GitHub scope (${githubRepos.join(', ')}). If it belongs to this work, ask the user to add it to **GitHub repo** in AGENTS.md; otherwise you have the wrong repo.`
+  }
+  return ''
+}
+
+/** Ticket scope from the project's stack card. Missing card → empty scope. */
+export function readTicketScope(root = projectRoot()) {
+  let md = ''
+  try {
+    md = readFileSync(join(root, 'AGENTS.md'), 'utf8')
+  } catch {
+    return { jiraKeys: [], githubRepos: [] }
+  }
+  return {
+    jiraKeys: parseScopeList(parseAgentsStackValue(md, 'Jira project key')),
+    githubRepos: parseScopeList(parseAgentsStackValue(md, 'GitHub repo')),
+  }
+}
+
 /** @returns {string} how the command writes a .env file, or '' when it does not */
 export function detectEnvWrite(command) {
   const cmd = String(command || '')
@@ -804,6 +1037,7 @@ function decideUnlocked(normalized) {
       // The agent is done, so whatever it was holding is free. This is the
       // real release; WRITE_LEASE_TTL_MS only covers agents that never stop.
       releaseWriteLeases(state, sid, id)
+      releaseAgentCommands(state, sid, id)
     }
     saveState(state)
     return { action: 'noop', clearId: normalized.subagentId || '' }

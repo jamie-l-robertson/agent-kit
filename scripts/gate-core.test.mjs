@@ -44,6 +44,10 @@ import {
   MAX_GATE_ROUNDS,
   getRunEventsPath,
   projectRoot,
+  isTicketTool,
+  parseScopeList,
+  extractTicketRefs,
+  ticketScopeDenial,
 } from '../.claude/hooks/gate-core.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -458,7 +462,18 @@ test('Claude synced agents include nesting forbid + worker-report markers', () =
   }
   const mgr = readFileSync(join(agentsDir, 'manager.md'), 'utf8')
   assert.match(mgr, /worker-report|validate-worker-report|JSON fence/i)
-  assert.match(mgr, /implement done requires verificationResult pass|pass\+evidence|non-empty `evidence`/i)
+  // The manager must know the schema is enforced *for* it, rather than carry a
+  // hand-copy of the rules — a second implementation is a second thing to drift.
+  assert.match(
+    mgr,
+    /validate-worker-report\.mjs/,
+    'manager names the validator that already ran',
+  )
+  assert.match(
+    mgr,
+    /verificationResult/,
+    'manager still keys off the evidence contract',
+  )
 })
 
 test('resolveSessionId finds the session via the caller when session_id is omitted', () => {
@@ -927,4 +942,68 @@ test('run events follow CLAUDE_PROJECT_DIR, and AGENT_KIT_* still wins', () => {
       else process.env[k] = v
     }
   }
+})
+
+// --- Ticket scope ---------------------------------------------------------
+
+test('isTicketTool gates on the tool name, not the server id', () => {
+  // Server ids are UUIDs / plugin names and change on reinstall.
+  assert.equal(isTicketTool('mcp__34a88894-0b52__get_jira_issue'), true)
+  assert.equal(isTicketTool('mcp__whatever__create_issue'), true)
+  assert.equal(isTicketTool('mcp__x__search_tickets'), true)
+  assert.equal(isTicketTool('mcp__atlassian__anything'), true)
+  assert.equal(isTicketTool('mcp__supabase__execute_sql'), false)
+  assert.equal(isTicketTool('Bash'), false, 'plain tools never enter this path')
+})
+
+test('parseScopeList treats n/a and placeholders as unset', () => {
+  assert.deepEqual(parseScopeList('PROJ'), ['proj'])
+  assert.deepEqual(parseScopeList('PROJ, OTHER'), ['proj', 'other'])
+  assert.deepEqual(parseScopeList('n/a'), [])
+  assert.deepEqual(parseScopeList(''), [])
+  assert.deepEqual(parseScopeList('<!-- e.g. PROJ — or n/a -->'), [])
+})
+
+test('extractTicketRefs finds keys wherever the MCP put them', () => {
+  // Every tracker MCP names its params differently, so the whole payload is scanned.
+  assert.deepEqual(extractTicketRefs({ issueKey: 'PROJ-12' }).jira, ['PROJ'])
+  assert.deepEqual(extractTicketRefs({ jql: 'project = OTHER-9' }).jira, ['OTHER'])
+  assert.deepEqual(
+    extractTicketRefs({ url: 'https://github.com/acme/web/issues/3' }).github,
+    ['acme/web'],
+  )
+})
+
+test('ticketScopeDenial fails closed when the key is unset', () => {
+  const refs = { jira: ['PROJ'], github: [] }
+  const denial = ticketScopeDenial(refs, { jiraKeys: [], githubRepos: [] })
+  assert.match(denial, /no \*\*Jira project key\*\*/)
+  assert.match(denial, /setup/, 'must say how to fix it')
+})
+
+test('ticketScopeDenial blocks another project and names both sides', () => {
+  const denial = ticketScopeDenial(
+    { jira: ['OTHER'], github: [] },
+    { jiraKeys: ['proj'], githubRepos: [] },
+  )
+  assert.match(denial, /OTHER/)
+  assert.match(denial, /proj/)
+})
+
+test('ticketScopeDenial allows the configured scope, including a second key', () => {
+  const scope = { jiraKeys: ['proj', 'ops'], githubRepos: ['acme/web'] }
+  assert.equal(ticketScopeDenial({ jira: ['PROJ'], github: [] }, scope), '')
+  assert.equal(ticketScopeDenial({ jira: ['OPS'], github: [] }, scope), '')
+  assert.equal(
+    ticketScopeDenial({ jira: [], github: ['acme/web'] }, scope),
+    '',
+  )
+})
+
+test('ticketScopeDenial says nothing when the call names no ticket', () => {
+  // A ticket tool called with no ref (list boards, whoami) is not a scope breach.
+  assert.equal(
+    ticketScopeDenial({ jira: [], github: [] }, { jiraKeys: [], githubRepos: [] }),
+    '',
+  )
 })

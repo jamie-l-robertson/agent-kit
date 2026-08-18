@@ -2,33 +2,30 @@
 
 Quick reference for subagents. Prefer this over rediscovering the stack each run.
 
-This is the **kit's own** card, filled for developing the kit itself. The
-placeholder template shipped to consuming projects lives in
-[`.claude/skills/setup/AGENTS.template.md`](.claude/skills/setup/AGENTS.template.md) — edit that one when changing what
-projects receive.
+<!-- CUSTOMIZE: replace every placeholder below for the target project. -->
 
 ## Stack
 
-- **App**: Node ESM CLI scripts (`scripts/`) + Claude Code agent definitions (`.claude/`) — no web app, no runtime server
-- **Database**: n/a
-- **Package manager**: npm (`package-lock.json`)
-- **UI**: n/a
-- **Design system**: n/a
-- **Design system adherence**: n/a
-- **Frontend standards**: n/a
-- **Backend standards**: n/a
-- **API standards**: n/a
-- **Cloud platform**: n/a
-- **Cloud standards**: n/a
-- **DevOps standards**: n/a
-- **Infrastructure standards**: n/a
-- **Security standards**: n/a
-- **Risk standards**: n/a
-- **Standards MCP**: n/a
-- **Required MCP**: none
-- **Jira project key**: n/a
-- **GitHub repo**: n/a <!-- kit development does not go through tracker MCP; consuming projects set both -->
-- **Server**: n/a
+- **App**: <!-- e.g. Next.js App Router + React + CMS -->
+- **Database**: <!-- e.g. Postgres via DATABASE_URL -->
+- **Package manager**: <!-- e.g. pnpm (lockfile) | npm | yarn | bun -->
+- **UI**: <!-- e.g. SCSS modules | Tailwind | CSS modules -->
+- **Design system**: <!-- repo path or https URL — e.g. `.claude/rules/design-system.md` — or n/a -->
+- **Design system adherence**: <!-- strict | standard | loose — only when Design system is set; else n/a. Default if unset: standard -->
+- **Frontend standards**: <!-- repo path or https URL — e.g. `docs/standards/frontend.md` — or n/a -->
+- **Backend standards**: <!-- repo path or https URL — or n/a -->
+- **API standards**: <!-- repo path or https URL — or n/a -->
+- **Cloud platform**: <!-- aws | azure | gcp | multi | n/a -->
+- **Cloud standards**: <!-- repo path or https URL — e.g. `.claude/rules/cloud-standards.md` — or n/a -->
+- **DevOps standards**: <!-- repo path or https URL — e.g. `.claude/rules/devops-standards.md` — or n/a -->
+- **Infrastructure standards**: <!-- repo path or https URL — e.g. `.claude/rules/infrastructure-standards.md` — or n/a -->
+- **Security standards**: <!-- repo path or https URL — e.g. `.claude/rules/security-standards.md` — or n/a -->
+- **Risk standards**: <!-- repo path or https URL — e.g. `.claude/rules/risk-standards.md` — or n/a -->
+- **Standards MCP**: <!-- when any standards/design-system ref is a URL: MCP server id hint, e.g. notion | confluence | github — or n/a -->
+- **Required MCP**: <!-- comma-separated server ids to prewarm, e.g. `github, notion, context7` — or `none` -->
+- **Jira project key**: <!-- e.g. PROJ — comma-separate several — or n/a. Enforced: agents are blocked from tracker calls outside this scope, and blocked when it is unset -->
+- **GitHub repo**: <!-- e.g. owner/name — comma-separate several — or n/a. Same enforcement as Jira project key -->
+- **Server**: <!-- e.g. collections/, server actions, API routes, server libs — see ownership -->
 - **Rules**: always-on under `.claude/rules/` (TDD, Karpathy, Context7). Path-only stubs: design-system + `*-standards.md` when stack slots point there — not always-on.
 - **Skills**: kit — `a11y-wcag`, `agent-memory`, `architecture-review`, `brief-hygiene`, `bro`, `browser-test`, `code-review`, `issue-intake`, `manager`, `perf-audit`, `poc-playbook`, `response-sanity`, `setup`, `sync-project-skills`, `verify-evidence`; project — `grill-with-docs`, `simplify`, `to-issues`. Inventory: `.claude/memory/skills-inventory.md`.
 
@@ -57,9 +54,9 @@ When **Design system** is a real ref, `frontend` loads it before UI work and `re
 
 | Paths | Owner |
 |-------|--------|
-| `.claude/hooks/**`, `.claude/schemas/**`, `scripts/**` | Kit internals — main chat (see `CLAUDE.md` exception), or `backend` when dispatched |
-| `.claude/agents/**`, `.claude/protocols/**`, `.claude/rules/**`, `.claude/skills/**` | Kit definitions — main chat; run `node scripts/sync-tool-adapters.mjs` after |
-| `.claude/skills/setup/AGENTS.template.md` | The card shipped to consuming projects — **not** this file |
+| <!-- e.g. server libs, collections, API routes --> | `backend` |
+| <!-- e.g. components, styles, pages --> | `frontend` |
+| <!-- shared isomorphic utils — set Writable paths when both frontend and backend are in flight --> | **Shared** |
 | `AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/**` | `documenter` — **single-writer**. Several agents may legitimately write the stack card; only one per wave. Sequence, never parallelize. |
 
 ## Narrow commands
@@ -68,23 +65,24 @@ Detect the package manager from the lockfile. Prefer commands listed here over i
 
 | Intent | Command |
 |--------|---------|
-| Unit/int | `npm test` (node:test; narrow: `node --test scripts/<name>.test.mjs`) |
-| E2E | n/a |
-| A11y | n/a |
-| Lint path | n/a |
-| Codegen / types | `node scripts/sync-tool-adapters.mjs` (agent bodies from `.claude/protocols/`) |
-| Full suite | `npm test` |
+| Unit/int | <!-- e.g. pnpm test:int or pnpm exec vitest run <path> --> |
+| E2E | <!-- e.g. pnpm test:e2e --> |
+| A11y | <!-- e.g. pnpm test:a11y --> |
+| Lint path | <!-- e.g. pnpm exec eslint <path> --> |
+| Codegen / types | <!-- e.g. pnpm generate:types — or n/a --> |
+| Full suite | <!-- e.g. pnpm test — only when explicitly asked --> |
 
-Kit-specific checks, all safe to run: `node scripts/check-agent-kit.mjs`,
-`node scripts/sync-tool-adapters.mjs --check`, `node scripts/sync-project-skills.mjs --check`.
+For Playwright e2e/a11y (when used): attempt first; cold-start / blocked rules → **verify-evidence** (`.claude/skills/verify-evidence/SKILL.md`). Missing required env secrets listed below → blocked.
 
 ### Required env (for boots / e2e)
 
-none
+<!-- e.g. DATABASE_URL — or none -->
 
 ## No owner (tell the user)
 
 Pure cloud-console DNS/secrets/ops with no IaC, CLI, or usable credentials — do not implement; tell the user. DNS-as-code / Terraform / secret-store automation → `infrastructure`. In-repo CI/workflows → `devops`. Auth/vulns audit → `security` (fixes via manager → owning implementer; lockfile/CVE bumps → `backend`). PII/compliance audit → `risk`. Unknown external facts/stats/prior art → `researcher` (cited) before the implementer runs. `reviewer` may flag incidental smells and route via Recommend next.
+
+<!-- CUSTOMIZE: add project-specific no-owner zones here. -->
 
 ## Agents & routing
 

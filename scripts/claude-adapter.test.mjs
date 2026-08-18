@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -113,8 +113,24 @@ test('PreToolUse ignores non-spawn tools', () => {
   })
 })
 
+/** A kit agent running one command, so its pass/fail has something behind it. */
+function ranCommand(dir, agent = 'frontend', agentId = 'fe-1') {
+  return runAdapter(
+    {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      session_id: 's1',
+      agent_id: agentId,
+      agent_type: agent,
+      tool_input: { command: 'npx vitest run src/a.test.tsx' },
+    },
+    dir,
+  )
+}
+
 test('SubagentStop passes a valid worker report through', () => {
   withStateDir((dir) => {
+    ranCommand(dir)
     const out = runAdapter(
       {
         hook_event_name: 'SubagentStop',
@@ -126,6 +142,54 @@ test('SubagentStop passes a valid worker report through', () => {
       dir,
     )
     assert.deepEqual(out, {})
+  })
+})
+
+test('SubagentStop flags a pass that no command backs', () => {
+  withStateDir((dir) => {
+    // No ranCommand: the agent graded a test run it never performed.
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'fe-1',
+        agent_type: 'frontend',
+        last_assistant_message: fence(doneReport),
+      },
+      dir,
+    )
+    assert.match(
+      out.hookSpecificOutput.additionalContext,
+      /counted zero commands/,
+    )
+    assert.equal(out.decision, undefined, 'advisory only — must not block')
+  })
+})
+
+test('SubagentStop stays silent on a verificationResult of n/a', () => {
+  withStateDir((dir) => {
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'rv-1',
+        agent_type: 'reviewer',
+        last_assistant_message: fence({
+          status: 'done',
+          agent: 'reviewer',
+          mode: 'audit-only',
+          goal: 'x',
+          changed: [],
+          recommendNext: 'none',
+          humanApprove: 'n/a',
+          verificationResult: 'n/a',
+          findings: '',
+          findingsSeverity: 'none',
+        }),
+      },
+      dir,
+    )
+    assert.deepEqual(out, {}, 'nothing was graded, so there is nothing to back')
   })
 })
 
@@ -584,5 +648,230 @@ test('a tracker bypass still wins its own message', () => {
     const out = runAdapter(bashAs('planner', 'gh issue view 42'), dir)
     assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
     assert.match(out.hookSpecificOutput.permissionDecisionReason, /MCP/)
+  })
+})
+
+// --- Write-lease vs `changed` -------------------------------------------
+// Leases are the hook's own record of what an agent wrote. These cover the
+// two blocking directions and the deliberate non-block on the common case.
+
+/** Record a Write the way the host would, so the lease is taken. */
+function leaseWrite(dir, projectDir, file, agent = 'frontend', agentId = 'fe-1') {
+  return runAdapter(
+    {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      session_id: 's1',
+      agent_id: agentId,
+      agent_type: agent,
+      cwd: projectDir,
+      tool_input: { file_path: join(projectDir, file) },
+    },
+    dir,
+  )
+}
+
+test('SubagentStop blocks a report that omits a file the agent wrote', () => {
+  withStateDir((dir) => {
+    const projectDir = join(dir, 'proj')
+    leaseWrite(dir, projectDir, 'src/a.tsx')
+    leaseWrite(dir, projectDir, 'src/secret.tsx')
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'fe-1',
+        agent_type: 'frontend',
+        cwd: projectDir,
+        last_assistant_message: fence(doneReport), // changed: ['src/a.tsx']
+      },
+      dir,
+    )
+    assert.equal(out.decision, 'block')
+    assert.match(out.reason, /src\/secret\.tsx/)
+    assert.doesNotMatch(out.reason, /src\/a\.tsx/, 'reported file must not be blamed')
+  })
+})
+
+test('SubagentStop blocks an audit-only report from an agent that wrote files', () => {
+  withStateDir((dir) => {
+    const projectDir = join(dir, 'proj')
+    leaseWrite(dir, projectDir, 'src/a.tsx', 'reviewer', 'rv-1')
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'rv-1',
+        agent_type: 'reviewer',
+        cwd: projectDir,
+        last_assistant_message: fence({
+          status: 'done',
+          agent: 'reviewer',
+          mode: 'audit-only',
+          goal: 'x',
+          changed: [],
+          recommendNext: 'none',
+          humanApprove: 'n/a',
+          verificationResult: 'n/a',
+          findings: 'looks fine',
+          findingsSeverity: 'warning',
+        }),
+      },
+      dir,
+    )
+    assert.equal(out.decision, 'block')
+    assert.match(out.reason, /audit-only/)
+    assert.match(out.reason, /src\/a\.tsx/)
+  })
+})
+
+test('SubagentStop does not flag a changed path with no lease (Bash-written)', () => {
+  withStateDir((dir) => {
+    const projectDir = join(dir, 'proj')
+    // No leaseWrite: the agent edited via Bash, which takes no lease. The Bash
+    // call itself is still seen, which is what keeps the pass credible.
+    runAdapter(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        session_id: 's1',
+        agent_id: 'fe-1',
+        agent_type: 'frontend',
+        tool_input: { command: "sed -i '' s/a/b/ src/a.tsx && npx vitest run" },
+      },
+      dir,
+    )
+    const out = runAdapter(
+      {
+        hook_event_name: 'SubagentStop',
+        session_id: 's1',
+        agent_id: 'fe-1',
+        agent_type: 'frontend',
+        cwd: projectDir,
+        last_assistant_message: fence(doneReport),
+      },
+      dir,
+    )
+    assert.deepEqual(out, {}, 'must stay silent — this is the common case')
+  })
+})
+
+// --- Ticket scope ---------------------------------------------------------
+
+/** A project dir whose stack card carries the given scope lines. */
+function withProjectCard(lines, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-card-'))
+  try {
+    writeFileSync(
+      join(dir, 'AGENTS.md'),
+      `# Agent stack card\n\n## Stack\n\n${lines.join('\n')}\n`,
+      'utf8',
+    )
+    return fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+function ticketCall(dir, projectDir, toolName, toolInput) {
+  return runAdapter(
+    {
+      hook_event_name: 'PreToolUse',
+      tool_name: toolName,
+      session_id: 's1',
+      agent_id: 'pl-1',
+      agent_type: 'planner',
+      tool_input: toolInput,
+    },
+    dir,
+    { CLAUDE_PROJECT_DIR: projectDir },
+  )
+}
+
+test('a tracker call outside the configured Jira project is denied', () => {
+  withStateDir((dir) => {
+    withProjectCard(['- **Jira project key**: PROJ'], (projectDir) => {
+      const out = ticketCall(dir, projectDir, 'mcp__abc123__get_jira_issue', {
+        issueKey: 'OTHER-42',
+      })
+      assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+      const why = out.hookSpecificOutput.permissionDecisionReason
+      assert.match(why, /OTHER/, 'names the ref it refused')
+      assert.match(why, /proj/i, 'and the scope it checked against')
+    })
+  })
+})
+
+test('a tracker call inside the configured project passes', () => {
+  withStateDir((dir) => {
+    withProjectCard(['- **Jira project key**: PROJ, OPS'], (projectDir) => {
+      assert.deepEqual(
+        ticketCall(dir, projectDir, 'mcp__abc123__get_jira_issue', {
+          issueKey: 'OPS-7',
+        }),
+        {},
+      )
+    })
+  })
+})
+
+test('a tracker call is denied when no project key is configured', () => {
+  withStateDir((dir) => {
+    withProjectCard(
+      ['- **Jira project key**: <!-- e.g. PROJ — or n/a -->'],
+      (projectDir) => {
+        const out = ticketCall(dir, projectDir, 'mcp__abc123__get_jira_issue', {
+          issueKey: 'ANY-1',
+        })
+        assert.equal(out.hookSpecificOutput.permissionDecision, 'deny')
+        assert.match(out.hookSpecificOutput.permissionDecisionReason, /setup/)
+      },
+    )
+  })
+})
+
+test('non-ticket MCP tools are never scope-checked', () => {
+  withStateDir((dir) => {
+    withProjectCard(['- **Jira project key**: PROJ'], (projectDir) => {
+      // CVE-2024-1234 matches the Jira key shape — the tool-name gate is what
+      // keeps that from being a false positive.
+      assert.deepEqual(
+        ticketCall(dir, projectDir, 'mcp__abc123__execute_sql', {
+          query: "select * from advisories where id = 'CVE-2024-1234'",
+        }),
+        {},
+      )
+    })
+  })
+})
+
+test('Bash mentioning a ticket-shaped string is untouched', () => {
+  withStateDir((dir) => {
+    withProjectCard(['- **Jira project key**: PROJ'], (projectDir) => {
+      assert.deepEqual(
+        ticketCall(dir, projectDir, 'Bash', {
+          command: 'npm audit | grep CVE-2024-1234',
+        }),
+        {},
+      )
+    })
+  })
+})
+
+test('the human is never ticket-gated', () => {
+  withStateDir((dir) => {
+    withProjectCard(['- **Jira project key**: PROJ'], (projectDir) => {
+      const out = runAdapter(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'mcp__abc123__get_jira_issue',
+          session_id: 's1',
+          tool_input: { issueKey: 'OTHER-42' },
+        },
+        dir,
+        { CLAUDE_PROJECT_DIR: projectDir },
+      )
+      assert.deepEqual(out, {}, 'main chat is not a kit agent')
+    })
   })
 })

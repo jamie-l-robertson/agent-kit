@@ -10,6 +10,7 @@ import {
   normalizeStackRef,
   isEmptyOrPlaceholderDesignSystem,
   checkDesignSystemAdherence,
+  checkAppendBlocksArePointers,
 } from './check-agent-kit.mjs'
 
 test('parseKitVersion reads kit: and source:', () => {
@@ -91,4 +92,64 @@ test('parseAgentsStackValue + normalizeStackRef strip comments', () => {
   assert.match(raw, /<!--/)
   assert.equal(normalizeStackRef(raw), '')
   assert.equal(isEmptyOrPlaceholderDesignSystem(process.cwd(), raw), true)
+})
+
+// --- append-blocks must point, never copy ---------------------------------
+// The pasted version drifted: standards rows lost their example paths, No owner
+// lost `researcher`, and the CLAUDE.md block lost `## Routing` entirely.
+
+const POINTERS = `# Kit-required append blocks
+
+| Block | Source | Section |
+|-------|--------|---------|
+| Stack | \`.claude/skills/setup/AGENTS.template.md\` | \`## Stack\` |
+| Entry | \`CLAUDE.md\` | whole file |
+`
+
+function withKitRoot(appendBlocks, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'kit-ab-'))
+  try {
+    mkdirSync(join(dir, '.claude', 'skills', 'setup'), { recursive: true })
+    writeFileSync(join(dir, '.claude', 'skills', 'setup', 'AGENTS.template.md'), '# card\n')
+    writeFileSync(join(dir, 'CLAUDE.md'), '# entry\n')
+    writeFileSync(
+      join(dir, '.claude', 'skills', 'setup', 'append-blocks.md'),
+      appendBlocks,
+    )
+    return fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('checkAppendBlocksArePointers accepts a pointer-only file', () => {
+  withKitRoot(POINTERS, (dir) => {
+    assert.deepEqual(checkAppendBlocksArePointers(dir), [])
+  })
+})
+
+test('checkAppendBlocksArePointers rejects a re-pasted stack row', () => {
+  const pasted = `${POINTERS}\n- **DevOps standards**: <!-- repo path — or n/a -->\n`
+  withKitRoot(pasted, (dir) => {
+    const errors = checkAppendBlocksArePointers(dir)
+    assert.equal(errors.length, 1)
+    assert.match(errors[0], /pastes a stack row/)
+  })
+})
+
+test('checkAppendBlocksArePointers rejects a re-pasted section body', () => {
+  const pasted = `${POINTERS}\n## No owner\n\nPure cloud-console ops...\n`
+  withKitRoot(pasted, (dir) => {
+    assert.match(checkAppendBlocksArePointers(dir)[0], /pastes the "## No owner"/)
+  })
+})
+
+test('checkAppendBlocksArePointers catches a pointer to a file that is gone', () => {
+  withKitRoot(POINTERS, (dir) => {
+    rmSync(join(dir, '.claude', 'skills', 'setup', 'AGENTS.template.md'))
+    assert.match(
+      checkAppendBlocksArePointers(dir).join('\n'),
+      /AGENTS.template.md, which does not exist/,
+    )
+  })
 })

@@ -327,10 +327,22 @@ export function installFrom(kitRoot, { force = false, kitLabel, target = process
     copyDir(kitDocs, join(target, 'docs', 'agent-kit'))
   }
 
-  for (const file of ['AGENTS.md', 'CLAUDE.md']) {
+  // AGENTS.md ships from the template beside the setup skill — the kit's own
+  // root copy is filled in for kit development and would hand a consumer this
+  // repo's stack, not theirs. The template rides along with .claude/, so
+  // append-blocks can still point at it from inside a consuming project.
+  // CLAUDE.md has no placeholders and reads the same for both, so there is one
+  // copy and it lives at the root; a second would only drift.
+  for (const [file, src] of [
+    ['AGENTS.md', join(kitRoot, '.claude', 'skills', 'setup', 'AGENTS.template.md')],
+    ['CLAUDE.md', join(kitRoot, 'CLAUDE.md')],
+  ]) {
     const dest = join(target, file)
-    const src = join(kitRoot, file)
-    if (!existsSync(src)) continue
+    if (!existsSync(src)) {
+      // Silently skipping would install a project with no stack card, and the
+      // agents would only report it much later as "AGENTS.md is placeholders".
+      throw new Error(`Kit is missing ${src} — cannot install ${file}`)
+    }
     if (existsSync(dest) && !force) {
       appendInstallKeep(target, { path: file, kit: label, force: false })
       console.log(

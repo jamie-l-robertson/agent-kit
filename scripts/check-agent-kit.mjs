@@ -20,6 +20,8 @@ import {
   emptyState,
   saveState,
   DEFAULT_STATE_PATH,
+  parseAgentsStackValue,
+  normalizeStackRef,
 } from '../.claude/hooks/gate-core.mjs'
 import { validateWorkerReport } from './validate-worker-report.mjs'
 
@@ -76,25 +78,10 @@ export function assertKitVersion(text) {
   return { ok: errors.length === 0, errors, fields }
 }
 
-/**
- * @param {string} agentsMd
- * @param {string} label e.g. "Design system"
- */
-export function parseAgentsStackValue(agentsMd, label) {
-  const re = new RegExp(
-    `^-\\s+\\*\\*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*:\\s*(.+)$`,
-    'mi',
-  )
-  const m = re.exec(agentsMd)
-  return m ? m[1].trim() : ''
-}
-
-/** Strip HTML comments and normalize. */
-export function normalizeStackRef(raw) {
-  return String(raw || '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .trim()
-}
+// Stack-card parsing lives in gate-core: the hooks read the card too, and the
+// import only runs one way (check-agent-kit → gate-core). Re-exported so this
+// module's public surface is unchanged.
+export { parseAgentsStackValue, normalizeStackRef }
 
 /**
  * Empty / placeholder design-system stub (headings only, no filled bullets).
@@ -276,6 +263,49 @@ function smokeValidator() {
   if (bad.ok) throw new Error('validator should reject security implement done')
 }
 
+/**
+ * append-blocks.md must point at the real files, never carry copies of them.
+ *
+ * It used to paste the sections verbatim under a "keep in sync" instruction,
+ * and drifted: four standards rows lost their example paths, the No owner block
+ * lost `researcher`, and the CLAUDE.md block lost the whole `## Routing`
+ * section — so projects that installed over an existing CLAUDE.md got routing
+ * guidance with the "never pass `name`" warning missing. A copy here is not a
+ * style problem; it is that failure waiting to recur.
+ *
+ * @param {string} root
+ * @returns {string[]} errors
+ */
+export function checkAppendBlocksArePointers(root) {
+  const path = join(root, '.claude', 'skills', 'setup', 'append-blocks.md')
+  if (!existsSync(path)) return []
+  const md = readFileSync(path, 'utf8')
+  const errors = []
+
+  const stackRow = md.match(/^- \*\*[A-Za-z /]+\*\*:\s*<!--/m)
+  if (stackRow) {
+    errors.push(
+      `append-blocks.md pastes a stack row (${stackRow[0].trim()}) — point at the \`## Stack\` section of .claude/skills/setup/AGENTS.template.md instead`,
+    )
+  }
+  for (const marker of ['## Memory', '## No owner', '# Claude Code — agent kit']) {
+    if (md.includes(`\n${marker}`)) {
+      errors.push(
+        `append-blocks.md pastes the "${marker}" body — name the source section instead`,
+      )
+    }
+  }
+  for (const src of ['.claude/skills/setup/AGENTS.template.md', 'CLAUDE.md']) {
+    if (!md.includes(src)) {
+      errors.push(`append-blocks.md never points at ${src}`)
+    }
+    if (!existsSync(join(root, src))) {
+      errors.push(`append-blocks.md points at ${src}, which does not exist`)
+    }
+  }
+  return errors
+}
+
 function main() {
   const kitVersionPath = join(ROOT, '.claude', '.kit-version')
   const kitVersionRaw = existsSync(kitVersionPath)
@@ -310,6 +340,11 @@ function main() {
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
     errors.push('  fix: node scripts/sync-project-skills.mjs')
+  }
+  try {
+    errors.push(...checkAppendBlocksArePointers(ROOT))
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e))
   }
   try {
     smokeClaudeGate()

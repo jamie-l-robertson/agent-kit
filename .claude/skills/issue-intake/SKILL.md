@@ -19,6 +19,7 @@ Ingest GitHub / Jira sources into planning. **No CLI or HTTP fallbacks.**
 
 ## Prerequisites
 
+- **Ticket scope is enforced.** A `PreToolUse` hook checks every tracker MCP call against **Jira project key** / **GitHub repo** in `AGENTS.md` and denies anything outside them — and denies tracker calls outright while those fields are unset. A ref from another project is not something to work around: return `blocked` naming the ref, and let the manager ask the user whether to widen the scope.
 - Prefer brief `MCP prewarmed: <servers>`. If empty, discover/auth once.
 - Missing/disconnected MCP or auth failure after one attempt → `Status: blocked` (name the server). Do **not** use `gh`, Jira CLI, `curl`, WebFetch, or browser.
 

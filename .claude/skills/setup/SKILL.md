@@ -53,7 +53,7 @@ If `.claude/memory/install-audit.md` has `kept-project` for `AGENTS.md` / `CLAUD
 **CLAUDE.md kit sections:** `## Always-on rules`, Agents & skills / sync notes (see append-blocks). Do **not** require an AGENTS heading named “Always-on rules” or “Skills”.
 
 1. Tell the user clearly: the project is using **its own** file(s); kit-required sections may be missing and must be **appended** (not silently overwritten).
-2. Read [`.claude/skills/setup/append-blocks.md`](append-blocks.md). For each missing block, show the fenced copy-paste content and ask them to paste — or confirm you may append with their permission.
+2. Read [`.claude/skills/setup/append-blocks.md`](append-blocks.md) — it names each block's **source file and section**, it does not contain copies. For each missing block, read that section out of the source (`.claude/skills/setup/AGENTS.template.md` for stack-card blocks, `CLAUDE.md` for the entrypoint), show it fenced, and ask them to paste — or confirm you may append with their permission. Never retype a section from memory, and never offer the kit's own root `AGENTS.md`: that one is filled in for kit development.
 3. Prefer append-at-end / insert under the right heading. Never delete project content unless they explicitly ask to replace (`--force` / “overwrite with kit template”).
 
 ### 1. Scan
@@ -112,13 +112,14 @@ Ask only for fields still missing after inference. Suggested order:
 11. **Cloud / DevOps / Infrastructure / Security / Risk standards** — each path, URL, or `n/a`. Untouched kit stubs under `.claude/rules/*-standards.md` (empty headings) → write **`n/a`**, do not point stack slots at empty stubs.
 12. **Standards MCP** — if any standards/design-system ref is a URL: MCP server id hint (e.g. `notion`, `confluence`, `github`) or `unknown` (workers `blocked` until MCP exists). Else `n/a`.
 13. **Required MCP** — comma-separated server ids to prewarm (e.g. `github, notion, context7`) or `none`. Include Standards MCP + issue trackers the team uses.
-14. **Server** — where server logic lives (paths or pattern)
-15. **Path ownership** — backend paths, frontend paths, shared paths (table rows)
-16. **Narrow commands** — Unit/int → E2E → A11y → Lint path → Codegen / types → Full suite
+14. **Jira project key** / **GitHub repo** — the tracker scope this project owns. **Enforced, not advisory:** a hook blocks kit agents from any tracker MCP call naming a key or repo outside these, *and* blocks tracker calls entirely while they are unset. Ask for both whenever the project uses Jira or GitHub issues; accept `n/a` only when it genuinely has no tracker, and say plainly that tracker MCP calls will be refused until they are set. Comma-separate when a project spans several boards or repos.
+15. **Server** — where server logic lives (paths or pattern)
+16. **Path ownership** — backend paths, frontend paths, shared paths (table rows)
+17. **Narrow commands** — Unit/int → E2E → A11y → Lint path → Codegen / types → Full suite
    Prefer real scripts from `package.json`. Use `n/a` when unused.
-17. **Required env** — names needed for boots/e2e, or `none`
-18. **No owner** — keep kit defaults unless the user adds project-specific zones
-19. **Agent models (optional)** — kit default is `inherit` on every `.claude/agents/<name>.md`. Ask if the project wants any per-agent pins (picker-available slugs only). Skip keeps all `inherit`. If pinning: edit those agents’ `model:` frontmatter, then `node scripts/sync-tool-adapters.mjs`.
+18. **Required env** — names needed for boots/e2e, or `none`
+19. **No owner** — keep kit defaults unless the user adds project-specific zones
+20. **Agent models (optional)** — kit default is `inherit` on every `.claude/agents/<name>.md`. Ask if the project wants any per-agent pins (picker-available slugs only). Skip keeps all `inherit`. If pinning: edit those agents’ `model:` frontmatter, then `node scripts/sync-tool-adapters.mjs`.
 
 Keep the fixed sections (**Rules**, **Agents & routing**, **Memory**, call-graph note, ref-resolution table) unless the user asks to change agents.
 

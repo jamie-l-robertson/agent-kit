@@ -21,7 +21,11 @@ import { dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WORKERS, MANAGER } from '../.claude/hooks/gate-core.mjs'
 import { KNOWN_KIT_SKILL_NAMES } from './kit-skill-names.mjs'
-import { mergeClaudeSettings } from './merge-host-config.mjs'
+import {
+  mergeClaudeSettings,
+  PRETOOL_MATCHER,
+  KIT_AGENT_MATCHER,
+} from './merge-host-config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
@@ -457,6 +461,10 @@ function checkDrift() {
     try {
       const doc = JSON.parse(read(claudeSettings))
       const gateCmd = 'adapters/claude.mjs'
+      const MATCHERS = {
+        PreToolUse: PRETOOL_MATCHER,
+        SubagentStop: KIT_AGENT_MATCHER,
+      }
       for (const key of [
         'SessionStart',
         'SessionEnd',
@@ -477,6 +485,24 @@ function checkDrift() {
           mismatches.push(
             `.claude/settings.json hooks.${key} missing kit claude gate command`,
           )
+        }
+        // A stale matcher is the quiet failure: the command is wired, so the
+        // check above passes, but the hook never fires for the tools the
+        // matcher was widened to cover. That is how a guard silently does
+        // nothing — check the matcher, not just the wiring.
+        const want = MATCHERS[key]
+        if (want !== undefined) {
+          const entry = list.find((e) =>
+            (e?.hooks || []).some((h) =>
+              String(h?.command || '').includes(gateCmd),
+            ),
+          )
+          const got = entry?.matcher ?? null
+          if (got !== want) {
+            mismatches.push(
+              `.claude/settings.json hooks.${key} matcher is "${got}" (want "${want}")`,
+            )
+          }
         }
       }
     } catch (err) {

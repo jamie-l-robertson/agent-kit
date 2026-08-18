@@ -186,6 +186,12 @@ export function buildOutputs(root = ROOT) {
   }
 }
 
+/** The shipped stack-card template, when this root is the kit itself. */
+export function templateCardPath(root = ROOT) {
+  const p = join(root, '.claude', 'skills', 'setup', 'AGENTS.template.md')
+  return existsSync(p) ? p : ''
+}
+
 /**
  * Write skills-inventory.md and patch AGENTS.md Skills line for `root`.
  * Used by CLI and by installInto so refresh does not depend on target's old scripts.
@@ -207,6 +213,17 @@ export function applyProjectSkillsSync(root = ROOT) {
   const agentsMdSkipped = next === prev && !next.includes(skillsLine)
   if (!agentsMdSkipped) {
     writeFileSync(agentsMdPath, next.endsWith('\n') ? next : `${next}\n`)
+  }
+  // The stack-card template is a plain file to everything else, so nothing
+  // would otherwise refresh its Skills line and it would ship stale. It rides
+  // along with .claude/, so it exists in consuming projects too; guard anyway.
+  const templatePath = templateCardPath(root)
+  if (templatePath) {
+    const prevTpl = read(templatePath)
+    const nextTpl = patchAgentsSkillsLine(prevTpl, skillsLine)
+    if (nextTpl !== prevTpl) {
+      writeFileSync(templatePath, nextTpl.endsWith('\n') ? nextTpl : `${nextTpl}\n`)
+    }
   }
   const kitCount = skills.filter((s) => s.owner === 'kit').length
   const projectCount = skills.filter((s) => s.owner === 'project').length
@@ -236,6 +253,16 @@ function main() {
       const line = md.split('\n').find((l) => l.startsWith('- **Skills**:'))
       if (!line) mismatches.push('AGENTS.md missing Skills line')
       else if (line !== skillsLine) mismatches.push('drift AGENTS.md Skills line')
+    }
+    const templatePath = templateCardPath(root)
+    if (templatePath) {
+      const line = read(templatePath)
+        .split('\n')
+        .find((l) => l.startsWith('- **Skills**:'))
+      if (!line) mismatches.push('.claude/skills/setup/AGENTS.template.md missing Skills line')
+      else if (line !== skillsLine) {
+        mismatches.push('drift .claude/skills/setup/AGENTS.template.md Skills line')
+      }
     }
     if (mismatches.length) {
       console.error('Project skills inventory drift:')

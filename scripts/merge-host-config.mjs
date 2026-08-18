@@ -35,8 +35,14 @@ export const KIT_PERMISSIONS = [
 // Write|Edit|NotebookEdit|MultiEdit carry the write-lease check. Without them
 // the hook never sees a file write, so overlapping Writable paths were
 // unenforceable and collisions only showed up as workers clobbering each other.
+/**
+ * `mcp__.*` is here for the ticket-scope guard: without it the hook never sees
+ * a tracker call, and an agent can read or update the wrong Jira project or
+ * GitHub repo unchallenged. It means the hook runs on every MCP call, so the
+ * ticket path gates on the tool *name* before it touches AGENTS.md.
+ */
 export const PRETOOL_MATCHER =
-  'Agent|Task|Bash|Write|Edit|NotebookEdit|MultiEdit'
+  'Agent|Task|Bash|Write|Edit|NotebookEdit|MultiEdit|mcp__.*'
 
 /** Secrets stay out of agent context — names and refs only. */
 export const KIT_DENY = ['Read(./.env)', 'Read(./.env.*)']

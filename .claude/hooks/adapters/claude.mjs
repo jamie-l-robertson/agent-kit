@@ -29,6 +29,14 @@ import {
   detectNamedSpawn,
   isWriteTool,
   acquireWriteLease,
+  leasedPathsFor,
+  diffLeasesAgainstChanged,
+  recordAgentCommand,
+  commandCountFor,
+  isTicketTool,
+  extractTicketRefs,
+  ticketScopeDenial,
+  readTicketScope,
   MANAGER_GIT_ALLOWED,
   setGate,
   clearGate,
@@ -203,6 +211,72 @@ function holdManagedClose(sessionId) {
   return { handled: true, advisory: '' }
 }
 
+const bullets = (paths) => paths.map((p) => `- ${p}`).join('\n')
+
+/**
+ * `verificationResult` is a self-grade and `evidence` is a string the model
+ * wrote, so neither can be checked directly. What can: whether this agent ran
+ * a single command. Zero commands behind a pass/fail means the run never
+ * happened.
+ *
+ * Advisory, not a block — verification can legitimately go through an MCP tool
+ * instead of Bash, and blocking that would be a false negative the worker
+ * cannot argue with.
+ */
+function unverifiedAdvisory(sessionId, agentId, report) {
+  const verdict = String(report.verificationResult || '')
+  if (verdict !== 'pass' && verdict !== 'fail') return ''
+  if (commandCountFor(sessionId, agentId) > 0) return ''
+  return `Report claims \`verificationResult: ${verdict}\`, but the hook counted zero commands from this agent — nothing was run here. Manager: confirm the evidence came from a real run (an MCP-run check is legitimate) before trusting it.`
+}
+
+/**
+ * Write leases are the hook's own record of what an agent wrote, taken from
+ * intercepted Write/Edit calls. They are the one part of a worker report that
+ * does not rely on the model telling the truth, so they are checked against
+ * `changed[]` before the report is accepted.
+ *
+ * Read before releaseWriteLeases drops them at stop (gate-core SubagentStop).
+ *
+ * Only the leased-but-unreported direction is checked. The reverse — a path in
+ * `changed` with no lease — is not evidence of anything: leases are taken only
+ * for WRITE_TOOLS, so every Bash-written file (sed -i, heredoc, redirect)
+ * would trip it. An advisory that fires on the common case would train the
+ * manager to ignore the blocking one below.
+ *
+ * @returns {{ block: boolean, detail: string, unreported: string[] }}
+ */
+function checkLeasesAgainstReport(payload, sessionId, agentId, report) {
+  const projectDir =
+    process.env.CLAUDE_PROJECT_DIR || String(payload.cwd || '') || process.cwd()
+  const { leased, unreported } = diffLeasesAgainstChanged(
+    leasedPathsFor(sessionId, agentId),
+    report.changed,
+    projectDir,
+  )
+  const mode = String(report.mode || '')
+
+  // audit-only / verify-only forbid file writes outright, so any lease at all
+  // contradicts the report regardless of what `changed` says.
+  if (leased.length && (mode === 'audit-only' || mode === 'verify-only')) {
+    return {
+      block: true,
+      unreported,
+      detail: `Report claims \`mode: ${mode}\`, which forbids file writes — but this agent wrote ${leased.length} file(s):\n${bullets(leased)}\n\nEither the Mode is wrong or the edits were out of scope. Revert them, or return \`status: needs-decision\` explaining why the write was necessary.`,
+    }
+  }
+
+  if (unreported.length) {
+    return {
+      block: true,
+      unreported,
+      detail: `This agent wrote file(s) that \`changed\` does not list:\n${bullets(unreported)}\n\nThe manager commits from \`changed\`, so an unlisted edit ships unreviewed. Add them to \`changed\`, or revert them if they were unintended.`,
+    }
+  }
+
+  return { block: false, detail: '', unreported }
+}
+
 /**
  * Validate a kit worker's final message. Blocks until the fence is valid,
  * then goes advisory so a bad worker cannot burn the session.
@@ -239,6 +313,39 @@ function handleSubagentStop(payload) {
     : { ok: false, errors: ['missing worker-report JSON fence'] }
 
   if (result.ok) {
+    // Runs before appendTaskMemory: a report the leases contradict must not be
+    // logged as a completed task while it is being sent back.
+    const leaseCheck = checkLeasesAgainstReport(
+      payload,
+      sessionId,
+      agentId,
+      report,
+    )
+    if (leaseCheck.block) {
+      const blocks = bumpReportBlock(sessionId, agentId)
+      appendRunEvent({
+        event: 'report-lease-mismatch',
+        sessionId: sessionId || null,
+        role: agentType,
+        agent: agentType,
+        status: blocks > MAX_REPORT_BLOCKS ? 'advisory' : 'block',
+        mode: String(report.mode || ''),
+        unreported: leaseCheck.unreported,
+        hookEvent: 'SubagentStop',
+      })
+      if (blocks > MAX_REPORT_BLOCKS) {
+        write({
+          hookSpecificOutput: {
+            hookEventName: 'SubagentStop',
+            additionalContext: `${leaseCheck.detail}\n\n(Lease gate gave up after ${MAX_REPORT_BLOCKS} retries — manager must bounce this report.)`,
+          },
+        })
+        return { handled: true, advisory: '' }
+      }
+      write({ decision: 'block', reason: leaseCheck.detail })
+      return { handled: true, advisory: '' }
+    }
+
     const tokens = resolveTokenCount(report, payload)
     // The payload carries no token field, so any number here came from the
     // worker's transcript unless the worker counted itself — and the
@@ -271,7 +378,15 @@ function handleSubagentStop(payload) {
     applyGates(sessionId, agentType, report)
     if (agentType === MANAGER) return holdManagedClose(sessionId)
 
-    return { handled: false, advisory: bypassAdvisory(report) }
+    return {
+      handled: false,
+      advisory: [
+        bypassAdvisory(report),
+        unverifiedAdvisory(sessionId, agentId, report),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    }
   }
 
   const blocks = bumpReportBlock(sessionId, agentId)
@@ -321,10 +436,32 @@ try {
     stopAdvisory = report.advisory
   }
 
-  // Non-spawn PreToolUse: Bash policy only. Answered without touching state —
-  // this fires on every Bash call a kit agent makes, so it must stay cheap.
+  // Non-spawn PreToolUse: Bash policy + the write-lease and command records.
+  // This fires on every Bash/Write call a kit agent makes, so the checks run
+  // regex-first and only reach state once a call is actually allowed through.
   if (event === 'PreToolUse' && normalized.skipGate) {
     const agent = normalized.callerAgentType
+
+    // Ticket scope. The matcher now includes mcp__.*, so this runs on every MCP
+    // call — the tool-name test is deliberately the first thing, before any
+    // file read or payload scan.
+    if (PROJECT_AGENTS.has(agent) && isTicketTool(normalized.toolName)) {
+      const refs = extractTicketRefs(payload.tool_input)
+      const denial = ticketScopeDenial(refs, readTicketScope())
+      if (denial) {
+        appendRunEvent({
+          event: 'ticket-scope-blocked',
+          sessionId: normalized.sessionId || null,
+          role: agent,
+          tool: normalized.toolName,
+          jira: refs.jira,
+          github: refs.github,
+          hookEvent: 'PreToolUse',
+        })
+        denyPreToolUse(denial)
+        process.exit(0)
+      }
+    }
 
     // Write lease: the mechanical form of "Writable paths must not overlap".
     // Kit agents only — the human's main chat is never leased or blocked.
@@ -394,6 +531,11 @@ try {
           : `Blocked: \`git ${gitWrite}\` — only the manager commits. Return to the manager with status: blocked (or done, with your work left in the tree) and let it integrate.`,
       )
       process.exit(0)
+    }
+
+    // Counted after the denies, so a blocked command is not credited as work.
+    if (isKitBash) {
+      recordAgentCommand(normalized.sessionId, normalized.callerAgentId)
     }
 
     noop()

@@ -301,3 +301,37 @@ test('install refreshes stale skills-inventory.md (not preserved)', () => {
     rmSync(target, { recursive: true, force: true })
   }
 })
+
+// --- the shipped card is the template, not the kit's own -------------------
+
+test('install ships the placeholder template, never the kit\'s filled card', () => {
+  const target = mkdtempSync(join(kitRoot, '.tmp-install-'))
+  try {
+    installFrom(kitRoot, { force: true, kitLabel: 'test', target })
+    const shipped = readFileSync(join(target, 'AGENTS.md'), 'utf8')
+
+    assert.match(shipped, /CUSTOMIZE/, 'consumer must get placeholders to fill')
+    assert.doesNotMatch(
+      shipped,
+      /Kit internals — main chat/,
+      "kit's own ownership rows must not reach a consuming project",
+    )
+    assert.equal(
+      shipped,
+      readFileSync(join(kitRoot, '.claude', 'skills', 'setup', 'AGENTS.template.md'), 'utf8'),
+      'shipped card must be .claude/skills/setup/AGENTS.template.md verbatim',
+    )
+
+    // CLAUDE.md has no placeholders, so it ships from the root as one copy.
+    const claude = readFileSync(join(target, 'CLAUDE.md'), 'utf8')
+    assert.equal(claude, readFileSync(join(kitRoot, 'CLAUDE.md'), 'utf8'))
+    assert.match(
+      claude,
+      /## Routing/,
+      'the section the old hand-copied append block lost',
+    )
+    assert.match(claude, /Never pass `name`/, 'and the warning inside it')
+  } finally {
+    rmSync(target, { recursive: true, force: true })
+  }
+})
