@@ -208,6 +208,26 @@ test('a transcript-derived count is marked approximate', () => {
   assert.match(none, /\*\*Tokens\*\*: n\/a/, 'no tilde on a missing number')
 })
 
+test('a programming error inside the writer is reported, not swallowed', () => {
+  const booby = {
+    ...sampleReport,
+    get goal() {
+      throw new TypeError('dropped import')
+    },
+  }
+  const seen = []
+  const realError = console.error
+  console.error = (...args) => seen.push(args)
+  try {
+    appendTaskMemory(booby) // still non-fatal
+  } finally {
+    console.error = realError
+  }
+  assert.equal(seen.length, 1)
+  assert.match(String(seen[0][0]), /appendTaskMemory failed/)
+  assert.ok(seen[0][1] instanceof TypeError)
+})
+
 // Path resolution: a no-op today (CLAUDE_PROJECT_DIR == repo root when the host
 // runs the hook), but pinned so relocating the hooks cannot silently merge
 // every project's memory into one shared directory.

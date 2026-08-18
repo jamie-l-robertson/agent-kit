@@ -244,8 +244,9 @@ export function appendRunEvent(event) {
     const path = getRunEventsPath()
     mkdirSync(dirname(path), { recursive: true })
     appendFileSync(path, `${JSON.stringify(row)}\n`, 'utf8')
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // Non-fatal, but never silent — see appendTaskMemory in task-log.mjs.
+    console.error('[agent-kit] appendRunEvent failed:', err)
   }
 }
 

@@ -250,7 +250,9 @@ export function appendTaskMemory(report, opts = {}) {
     }
     const joined = `${header.trimEnd()}\n\n${live.join('\n')}`
     writeFileSync(path, joined.endsWith('\n') ? joined : `${joined}\n`, 'utf8')
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // Non-fatal on the hook path, but never silent: a swallowed ReferenceError
+    // here once surfaced only as an unrelated ENOENT in two tests.
+    console.error('[agent-kit] appendTaskMemory failed:', err)
   }
 }
